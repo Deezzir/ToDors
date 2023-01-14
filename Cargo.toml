@@ -1,0 +1,8 @@
+[package]
+name = "todo"
+author = ["Iurii Kondrakov <deezzir@gmail.com>"]
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+termion = "2.0.1"
