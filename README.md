@@ -1,3 +1,9 @@
 # Todo
 
-A terminal based todo list manager written in Rust.
+A terminal based Todo list manager written in Rust. My first Rust project.
+
+## Quick Start
+
+```bash
+cargo run
+```
