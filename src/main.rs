@@ -6,38 +6,38 @@ use std::io::{stdin, stdout, Read, Write};
 use termion::event::Key;
 use termion::input::TermRead;
 use termion::raw::IntoRawMode;
-use termion::screen::{AlternateScreen, IntoAlternateScreen};
 use termion::{clear, color, cursor, style};
 
 type Id = usize;
 
-struct UI<'a> {
+struct UI {
     cur_id: Option<Id>,
-    screen: &'a mut AlternateScreen<termion::raw::RawTerminal<std::io::Stdout>>,
+    term: termion::raw::RawTerminal<std::io::Stdout>,
     row: u16,
     col: u16,
 }
 
-impl<'a> UI<'a> {
-    fn new(screen: &'a mut AlternateScreen<termion::raw::RawTerminal<std::io::Stdout>>) -> Self {
+impl UI {
+    fn new() -> UI {
+        let mut term = stdout().into_raw_mode().unwrap();
+        term_reset(&mut term);
         UI {
-            screen,
+            cur_id: None,
+            term,
             row: 0,
             col: 0,
-            cur_id: None,
         }
     }
 
-    fn begin(
-        &mut self,
-        row: u16,
-        col: u16,
-    ) {
+    fn clear(&mut self) {
+        term_reset(&mut self.term);
+    }
+
+    fn begin(&mut self, row: u16, col: u16) {
         self.row = row;
         self.col = col;
-
         write!(
-            self.screen,
+            self.term,
             "{}{}{}",
             cursor::Hide,
             clear::All,
@@ -47,11 +47,12 @@ impl<'a> UI<'a> {
     }
 
     fn end(&mut self) {
-        self.screen.flush().unwrap();
+        self.term.flush().unwrap();
     }
 
     fn label(&mut self, text: &str) {
-        screen_write(self.screen, text, self.row, self.col);
+        term_goto(&mut self.term, (self.row + 1, self.col));
+        term_write(&mut self.term, text);
         self.row += 1;
     }
 
@@ -61,12 +62,12 @@ impl<'a> UI<'a> {
     }
 
     fn list_item(&mut self, text: &str, id: Id) {
-        let cur_id= self.cur_id.expect("List item must be inside a list");
+        let cur_id = self.cur_id.expect("List item must be inside a list");
         if cur_id == id {
-            screen_set_style(self.screen, (&color::Black, &color::White));
+            term_set_style(&mut self.term, (&color::Black, &color::White));
         }
         self.label(text);
-        screen_style_reset(self.screen);
+        term_style_reset(&mut self.term);
     }
 
     fn end_list(&mut self) {
@@ -74,47 +75,44 @@ impl<'a> UI<'a> {
     }
 }
 
-fn screen_set_style<W: Write>(
-    s: &mut AlternateScreen<W>,
-    pair: (&dyn color::Color, &dyn color::Color),
-) {
+fn term_set_style<W: Write>(s: &mut W, pair: (&dyn color::Color, &dyn color::Color)) {
     write!(s, "{}{}", color::Fg(pair.0), color::Bg(pair.1)).unwrap();
 }
 
-fn screen_write<W: Write>(s: &mut AlternateScreen<W>, text: &str, row: u16, col: u16) {
-    write!(s, "{}{}", cursor::Goto(col, (row + 1) as u16), text).unwrap();
+fn term_goto<W: Write>(s: &mut W, pos: (u16, u16)) {
+    write!(s, "{}", cursor::Goto(pos.1, pos.0)).unwrap();
 }
 
-fn screen_style_reset<W: Write>(s: &mut AlternateScreen<W>) {
+fn term_write<W: Write>(s: &mut W, text: &str) {
+    write!(s, "{}", text).unwrap();
+}
+
+fn term_style_reset<W: Write>(s: &mut W) {
     write!(s, "{}", style::Reset).unwrap();
+}
+
+fn term_reset<W: Write>(s: &mut W) {
+    term_goto(s, (1, 1));
+    write!(s, "{}{}{}", clear::All, cursor::Show, style::Reset).unwrap();
+    s.flush().unwrap();
 }
 
 fn main() {
     let mut stdin = stdin();
-    let mut screen = stdout()
-        .into_raw_mode()
-        .unwrap()
-        .into_alternate_screen()
-        .unwrap();
-    screen.flush().unwrap();
-    
-    let mut ui: UI = UI::new(&mut screen);
+    let mut ui: UI = UI::new();
     let mut cur_todo: Id = 0;
-    let cur_done: Id = 0;
+    let _cur_done: Id = 0;
     let mut quit: bool = false;
 
-    let todos: Vec<String> = vec![
+    let mut todos: Vec<String> = vec![
         "Finish Scancore".to_string(),
         "Make a cup of tea".to_string(),
         "Write a Rust TODO app".to_string(),
     ];
-    let dones: Vec<String> = vec![
-        "Pet a cat".to_string(),
-        "Have a lunch".to_string(),
-    ];
+    let mut dones: Vec<String> = vec!["Pet a cat".to_string(), "Have a lunch".to_string()];
 
     while !quit {
-        ui.begin( 0, 0);
+        ui.begin(0, 0);
         {
             ui.label("TODO:");
             ui.label("------------------------------");
@@ -124,13 +122,12 @@ fn main() {
             }
             ui.end_list();
 
-            
             ui.label("");
             ui.label("DONE:");
             ui.label("------------------------------");
-            ui.begin_list(cur_done,);
+            ui.begin_list(0);
             for (id, done) in dones.iter().enumerate() {
-                ui.list_item(&format!("- [X] {}", done), id);
+                ui.list_item(&format!("- [X] {}", done), id + 1);
             }
             ui.end_list();
         }
@@ -144,12 +141,25 @@ fn main() {
                         cur_todo -= 1;
                     }
                 }
-                Key::Down | Key::Char('s') => cur_todo = min(cur_todo + 1, todos.len() - 1),
+                Key::Down | Key::Char('s') => {
+                    if todos.len() > 0 {
+                        cur_todo = min(cur_todo + 1, todos.len() - 1)
+                    }
+                }
+                Key::Char('\n') => {
+                    if cur_todo < todos.len() {
+                        dones.push(todos.remove(cur_todo));
+                        if todos.len() > 0 {
+                            cur_todo = min(cur_todo, todos.len() - 1);
+                        } else {
+                            cur_todo = 0;
+                        }
+                    }
+                }
                 _ => {}
             }
         }
     }
 
-    screen.flush().unwrap();
-    write!(screen, "{}{}", cursor::Show, style::Reset).unwrap();
+    ui.clear();
 }
