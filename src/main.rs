@@ -1,11 +1,12 @@
 extern crate regex;
 extern crate termion;
 
-use std::cmp::min;
-use std::env;
+use std::cmp::{max, min};
+use std::env::args;
 use std::fs::File;
 use std::io::{self, stdin, stdout, BufRead, Read, Write};
-use std::process;
+use std::ops::{Add, Mul};
+use std::process::exit;
 
 use regex::Regex;
 
@@ -14,21 +15,38 @@ use termion::input::TermRead;
 use termion::raw::IntoRawMode;
 use termion::{clear, color, cursor, style};
 
-type Id = usize;
+#[derive(PartialEq)]
 enum Status {
     Todo,
     Done,
 }
 
-struct UI {
-    cur_id: Option<Id>,
-    term: termion::raw::RawTerminal<std::io::Stdout>,
-    row: u16,
-    col: u16,
+enum LayoutKind {
+    Vert,
+    Horz,
 }
 
+#[derive(Default, Clone, Copy)]
+struct Point {
+    x: u16,
+    y: u16,
+}
+
+struct Layout {
+    kind: LayoutKind,
+    pos: Point,
+    size: Point,
+}
+
+struct UI<W: Write> {
+    term: W,
+    layouts: Vec<Layout>,
+}
+
+const HIGHLIGHT_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::White);
+
 fn main() {
-    let mut args = env::args();
+    let mut args = args();
     args.next().unwrap();
 
     let file_path = match args.next() {
@@ -36,46 +54,53 @@ fn main() {
         None => {
             eprintln!("Usage: todo <file>");
             eprintln!("[ERROR]: No file specified");
-            process::exit(1);
+            exit(1);
         }
     };
 
     let mut quit: bool = false;
     let mut tab = Status::Todo;
-    
+
     let mut todos: Vec<String> = Vec::<String>::new();
-    let mut cur_todo: Id = 0;
+    let mut cur_todo: usize = 0;
     let mut dones: Vec<String> = Vec::<String>::new();
-    let mut cur_done: Id = 0;
+    let mut cur_done: usize = 0;
 
     parse_items(&file_path, &mut todos, &mut dones).unwrap();
 
     let mut stdin = stdin();
-    let mut ui: UI = UI::new();
+    let mut ui: UI<termion::raw::RawTerminal<std::io::Stdout>> = UI::new();
 
     while !quit {
-        ui.begin(0, 0);
+        ui.begin(Point::new(0, 0), LayoutKind::Horz);
         {
-            match tab {
-                Status::Todo => {
-                    ui.label("[TODO] DONE ");
-                    ui.label("------------");
-                    ui.begin_list(cur_todo);
-                    for (id, todo) in todos.iter().enumerate() {
-                        ui.list_item(&format!("- [ ] {}", todo), id);
+            ui.begin_layout(LayoutKind::Vert);
+            {
+                ui.label("TODO");
+                ui.label("------------");
+                for (id, todo) in todos.iter().enumerate() {
+                    if id == cur_todo && tab == Status::Todo {
+                        ui.label_styled(&format!("- [ ] {}", todo), HIGHLIGHT_PAIR);
+                    } else {
+                        ui.label(&format!("- [ ] {}", todo))
                     }
-                    ui.end_list();
-                }
-                Status::Done => {
-                    ui.label(" TODO [DONE]");
-                    ui.label("------------");
-                    ui.begin_list(cur_done);
-                    for (id, done) in dones.iter().enumerate() {
-                        ui.list_item(&format!("- [X] {}", done), id);
-                    }
-                    ui.end_list();
                 }
             }
+            ui.end_layout();
+
+            ui.begin_layout(LayoutKind::Vert);
+            {
+                ui.label("DONE");
+                ui.label("------------");
+                for (id, done) in dones.iter().enumerate() {
+                    if id == cur_done && tab == Status::Done {
+                        ui.label_styled(&format!("- [X] {}", done), HIGHLIGHT_PAIR);
+                    } else {
+                        ui.label(&format!("- [X] {}", done))
+                    }
+                }
+            }
+            ui.end_layout();
         }
         ui.end();
 
@@ -115,15 +140,61 @@ impl Status {
     }
 }
 
-impl UI {
-    fn new() -> UI {
+impl Point {
+    fn new(x: u16, y: u16) -> Self {
+        Self { x, y }
+    }
+}
+
+impl Add for Point {
+    type Output = Point;
+    fn add(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
+}
+
+impl Mul for Point {
+    type Output = Point;
+    fn mul(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x * rhs.x,
+            y: self.y * rhs.y,
+        }
+    }
+}
+
+impl Layout {
+    fn available_pos(&mut self) -> Point {
+        match self.kind {
+            LayoutKind::Horz => self.pos + self.size * Point::new(1, 0),
+            LayoutKind::Vert => self.pos + self.size * Point::new(0, 1),
+        }
+    }
+
+    fn add_widget(&mut self, size: Point) {
+        match self.kind {
+            LayoutKind::Horz => {
+                self.size.x += size.x;
+                self.size.y = max(self.size.y, size.y);
+            }
+            LayoutKind::Vert => {
+                self.size.x = max(self.size.x, size.x);
+                self.size.y += size.y;
+            }
+        }
+    }
+}
+
+impl UI<termion::raw::RawTerminal<std::io::Stdout>> {
+    fn new() -> UI<termion::raw::RawTerminal<std::io::Stdout>> {
         let mut term = stdout().into_raw_mode().unwrap();
         term_reset(&mut term);
-        UI {
-            cur_id: None,
+        Self {
             term,
-            row: 0,
-            col: 0,
+            layouts: Vec::<Layout>::new(),
         }
     }
 
@@ -131,45 +202,75 @@ impl UI {
         term_reset(&mut self.term);
     }
 
-    fn begin(&mut self, row: u16, col: u16) {
-        self.row = row;
-        self.col = col;
-        write!(
-            self.term,
-            "{}{}{}",
-            cursor::Hide,
-            cursor::Goto(1, 1),
-            clear::AfterCursor
-        )
-        .unwrap();
+    fn begin_layout(&mut self, kind: LayoutKind) {
+        let layout = self
+            .layouts
+            .last_mut()
+            .expect("Can't create a layout outside of UI::begin() and UI::end()");
+        let pos = layout.available_pos();
+
+        self.layouts.push(Layout {
+            kind,
+            pos,
+            size: Point::new(0, 0),
+        });
     }
 
-    fn end(&mut self) {
-        self.term.flush().unwrap();
+    fn begin(&mut self, pos: Point, kind: LayoutKind) {
+        assert!(self.layouts.is_empty());
+
+        self.layouts.push(Layout {
+            kind,
+            pos,
+            size: Point::new(0, 0),
+        });
+
+        term_write(
+            &mut self.term,
+            &format!(
+                "{}{}{}",
+                cursor::Hide,
+                cursor::Goto(1, 1),
+                clear::AfterCursor
+            ),
+        );
     }
 
     fn label(&mut self, text: &str) {
-        term_goto(&mut self.term, (self.row + 1, self.col));
+        let layout = self
+            .layouts
+            .last_mut()
+            .expect("Tried to render label outside of any layout");
+        let pos = layout.available_pos();
+
+        term_goto(&mut self.term, (pos.y, pos.x));
         term_write(&mut self.term, text);
-        self.row += 1;
+
+        layout.add_widget(Point::new(text.len() as u16, 1));
     }
 
-    fn begin_list(&mut self, id: Id) {
-        assert!(self.cur_id.is_none(), "Nested lists are not allowed");
-        self.cur_id = Some(id);
-    }
-
-    fn list_item(&mut self, text: &str, id: Id) {
-        let cur_id = self.cur_id.expect("List item must be inside a list");
-        if cur_id == id {
-            term_set_style(&mut self.term, (&color::Black, &color::White));
-        }
+    fn label_styled(&mut self, text: &str, pair: (&dyn color::Color, &dyn color::Color)) {
+        term_set_style(&mut self.term, pair);
         self.label(text);
         term_style_reset(&mut self.term);
     }
 
-    fn end_list(&mut self) {
-        self.cur_id = None;
+    fn end(&mut self) {
+        self.layouts
+            .pop()
+            .expect("Can't end a non-existing UI. Was there UI:begin()?");
+        self.term.flush().unwrap();
+    }
+
+    fn end_layout(&mut self) {
+        let layout = self
+            .layouts
+            .pop()
+            .expect("Can't end a non-existing layout. Was there UI:begin_layout()?");
+        self.layouts
+            .last_mut()
+            .expect("Can't end a non-existing layout. Was there UI:begin_layout()?")
+            .add_widget(layout.size);
     }
 }
 
@@ -178,7 +279,7 @@ fn term_set_style<W: Write>(s: &mut W, pair: (&dyn color::Color, &dyn color::Col
 }
 
 fn term_goto<W: Write>(s: &mut W, pos: (u16, u16)) {
-    write!(s, "{}", cursor::Goto(pos.1, pos.0)).unwrap();
+    write!(s, "{}", cursor::Goto(pos.1 + 1, pos.0 + 1)).unwrap();
 }
 
 fn term_write<W: Write>(s: &mut W, text: &str) {
@@ -195,19 +296,19 @@ fn term_reset<W: Write>(s: &mut W) {
     s.flush().unwrap();
 }
 
-fn list_up(list: &Vec<String>, cur: &mut Id) {
+fn list_up(list: &Vec<String>, cur: &mut usize) {
     if *cur > 0 && list.len() > 0 {
         *cur -= 1;
     }
 }
 
-fn list_down(list: &Vec<String>, cur: &mut Id) {
+fn list_down(list: &Vec<String>, cur: &mut usize) {
     if list.len() > 0 {
         *cur = min(*cur + 1, list.len() - 1)
     }
 }
 
-fn list_move(from: &mut Vec<String>, to: &mut Vec<String>, cur: &mut Id) {
+fn list_move(from: &mut Vec<String>, to: &mut Vec<String>, cur: &mut usize) {
     if *cur < from.len() {
         to.push(from.remove(*cur));
         if from.len() > 0 {
@@ -234,8 +335,12 @@ fn parse_items(
         } else if let Some(caps) = re_done.captures(&line) {
             dones.push(caps[1].to_string());
         } else {
-            eprintln!("[ERROR]: {}:{}: invalid format in the line", file_path, id + 1);
-            process::exit(1);
+            eprintln!(
+                "[ERROR]: {}:{}: invalid format in the line",
+                file_path,
+                id + 1
+            );
+            exit(1);
         }
     }
     Ok(())
