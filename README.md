@@ -10,8 +10,9 @@ cargo run
 
 ## Controls
 
-| key                                                 | description        |
+| Key                                                 | Descritption       |
 |-----------------------------------------------------|--------------------|
 | <kbd>w/↑</kbd>,<kbd>s/↓</kbd>                       | Move UP/DOWN       |
 | <kbd>ENTER</kbd>                                    | Action             |
+| <kbd>Tab</kbd>                                      | Switch between Todos and Dones |
 | <kbd>q/ESC</kbd>                                    | Quit               |
