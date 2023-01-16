@@ -291,19 +291,19 @@ fn term_style_reset<W: Write>(s: &mut W) {
 }
 
 fn term_reset<W: Write>(s: &mut W) {
-    term_goto(s, (1, 1));
+    term_goto(s, (0, 0));
     write!(s, "{}{}{}", clear::All, cursor::Show, style::Reset).unwrap();
     s.flush().unwrap();
 }
 
 fn list_up(list: &Vec<String>, cur: &mut usize) {
-    if *cur > 0 && list.len() > 0 {
+    if *cur > 0 && !list.is_empty() {
         *cur -= 1;
     }
 }
 
 fn list_down(list: &Vec<String>, cur: &mut usize) {
-    if list.len() > 0 {
+    if !list.is_empty() {
         *cur = min(*cur + 1, list.len() - 1)
     }
 }
@@ -311,7 +311,7 @@ fn list_down(list: &Vec<String>, cur: &mut usize) {
 fn list_move(from: &mut Vec<String>, to: &mut Vec<String>, cur: &mut usize) {
     if *cur < from.len() {
         to.push(from.remove(*cur));
-        if from.len() > 0 {
+        if !from.is_empty() {
             *cur = min(*cur, from.len() - 1);
         } else {
             *cur = 0;
@@ -346,7 +346,7 @@ fn parse_items(
     Ok(())
 }
 
-fn dump_items(file_path: &str, todos: &Vec<String>, dones: &Vec<String>) -> std::io::Result<()> {
+fn dump_items(file_path: &str, todos: &[String], dones: &[String]) -> std::io::Result<()> {
     let mut file = File::create(file_path)?;
     for todo in todos.iter() {
         writeln!(file, "TODO: {}", todo).unwrap();
