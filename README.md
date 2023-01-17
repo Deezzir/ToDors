@@ -2,6 +2,8 @@
 
 A terminal based Todo list manager written in Rust. My first Rust project.
 
+![img](demo.png)
+
 ## Quick Start
 
 ```bash

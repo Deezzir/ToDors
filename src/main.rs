@@ -11,6 +11,7 @@ use std::process::exit;
 use regex::Regex;
 
 use termion::event::Key;
+use termion::terminal_size;
 use termion::input::TermRead;
 
 use todo::ui::*;
@@ -72,6 +73,8 @@ fn main() {
     let mut ui = UI::new();
 
     while !quit {
+        let (width, _) = terminal_size().unwrap();
+
         ui.begin(Point::new(0, 0), LayoutKind::Vert);
         {
             ui.label(&format!("[MESSAGE]: {}", message));
@@ -86,7 +89,7 @@ fn main() {
                     } else {
                         ui.label(" TODO ");
                     }
-                    ui.label("-----------------------------");
+                    ui.label("-".repeat(width as usize / 2 - 1).as_str());
                     for (id, todo) in todos.iter_mut().enumerate() {
                         if id == cur_todo && panel == Panel::Todo {
                             if editing {
@@ -108,7 +111,7 @@ fn main() {
                     } else {
                         ui.label(" DONE ");
                     }
-                    ui.label("-----------------------------");
+                    ui.label("-".repeat(width as usize / 2 - 1).as_str());
                     for (id, done) in dones.iter_mut().enumerate() {
                         if id == cur_done && panel == Panel::Done {
                             if editing {
