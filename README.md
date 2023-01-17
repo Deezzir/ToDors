@@ -13,6 +13,7 @@ cargo run
 | Key                                                 | Descritption       |
 |-----------------------------------------------------|--------------------|
 | <kbd>w/↑</kbd>,<kbd>s/↓</kbd>                       | Move UP/DOWN       |
+| <kbd>SHIFT+w</kbd>,<kbd>SHIFT+s</kbd>               | Drag element UP/DOWN       |
 | <kbd>ENTER</kbd>                                    | Action             |
-| <kbd>Tab</kbd>                                      | Switch between Todos and Dones |
+| <kbd>TAB</kbd>                                      | Switch between Todos and Dones |
 | <kbd>q/ESC</kbd>                                    | Quit               |

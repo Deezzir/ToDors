@@ -111,6 +111,14 @@ fn main() {
                     Panel::Todo => list_down(&todos, &mut cur_todo),
                     Panel::Done => list_down(&dones, &mut cur_done),
                 },
+                Key::Char('W') => match panel {
+                    Panel::Todo => list_drag_up(&mut todos, &mut cur_todo),
+                    Panel::Done => list_drag_up(&mut dones, &mut cur_done),
+                },
+                Key::Char('S') => match panel {
+                    Panel::Todo => list_drag_down(&mut todos, &mut cur_todo),
+                    Panel::Done => list_drag_down(&mut dones, &mut cur_done),
+                },
                 Key::Char('\n') => match panel {
                     Panel::Todo => list_move(&mut todos, &mut dones, &mut cur_todo),
                     Panel::Done => list_move(&mut dones, &mut todos, &mut cur_done),
@@ -125,7 +133,10 @@ fn main() {
 
     ui.clear();
     dump_items(&file_path, &todos, &dones).unwrap();
-    print!("[INFO]: Goodbye, stranger! Your todo list is saved to '{}'.", file_path);
+    print!(
+        "[INFO]: Goodbye, stranger! Your todo list is saved to '{}'.",
+        file_path
+    );
 }
 
 fn list_up(list: &Vec<String>, cur: &mut usize) {
@@ -137,6 +148,20 @@ fn list_up(list: &Vec<String>, cur: &mut usize) {
 fn list_down(list: &Vec<String>, cur: &mut usize) {
     if !list.is_empty() {
         *cur = min(*cur + 1, list.len() - 1)
+    }
+}
+
+fn list_drag_up(list: &mut Vec<String>, cur: &mut usize) {
+    if *cur != 0 && list.len() > 1 {
+        list.swap(*cur, *cur - 1);
+        *cur -= 1;   
+    }
+}
+
+fn list_drag_down(list: &mut Vec<String>, cur: &mut usize) {
+    if *cur < list.len() - 1 && list.len() > 1 {
+        list.swap(*cur, *cur + 1);
+        *cur += 1;
     }
 }
 
