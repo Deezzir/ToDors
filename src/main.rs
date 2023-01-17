@@ -119,6 +119,18 @@ fn main() {
                     Panel::Todo => list_drag_down(&mut todos, &mut cur_todo),
                     Panel::Done => list_drag_down(&mut dones, &mut cur_done),
                 },
+                Key::Char('g') => match panel {
+                    Panel::Todo => list_first(&mut cur_todo),
+                    Panel::Done => {},
+                },
+                Key::Char('G') => match panel {
+                    Panel::Todo => list_last(&todos, &mut cur_todo),
+                    Panel::Done => {},
+                },
+                Key::Char('d') => match panel {
+                    Panel::Todo => {},
+                    Panel::Done => list_delete(&mut dones, &mut cur_done),
+                },
                 Key::Char('\n') => match panel {
                     Panel::Todo => list_move(&mut todos, &mut dones, &mut cur_todo),
                     Panel::Done => list_move(&mut dones, &mut todos, &mut cur_done),
@@ -162,6 +174,29 @@ fn list_drag_down(list: &mut Vec<String>, cur: &mut usize) {
     if *cur < list.len() - 1 && list.len() > 1 {
         list.swap(*cur, *cur + 1);
         *cur += 1;
+    }
+}
+
+fn list_first(cur: &mut usize) {
+    if *cur != 0 {
+        *cur = 0;
+    }
+}
+
+fn list_last(list: & Vec<String>, cur: &mut usize) {
+    if !list.is_empty() {
+        *cur = list.len() - 1;
+    }
+}
+
+fn list_delete(list: &mut Vec<String>, cur: &mut usize) {
+    if *cur < list.len() {
+        list.remove(*cur);
+        if !list.is_empty() {
+            *cur = min(*cur, list.len() - 1);
+        } else {
+            *cur = 0;
+        }
     }
 }
 
