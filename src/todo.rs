@@ -1,2 +1,2 @@
-pub mod ui;
 mod term;
+pub mod ui;

@@ -1,5 +1,5 @@
-use termion::{clear, color, cursor, style};
 use std::io::Write;
+use termion::{clear, color, cursor, style};
 
 pub fn term_set_style<W: Write>(s: &mut W, pair: (&dyn color::Color, &dyn color::Color)) {
     write!(s, "{}{}", color::Fg(pair.0), color::Bg(pair.1)).unwrap();

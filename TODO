@@ -1,5 +1,7 @@
-TODO: Learn Rust
-TODO: Add autoresizing of the TODO app UI
-TODO: Finish a Rust TODO app
-DONE: Add editing option to TODO app
-DONE: Add inserting option to TODO app
+TODO(): Learn Rust
+TODO(): Add autoresizing of the TODO app UI
+TODO(): Undo system in TODO app
+TODO(): Finish a Rust TODO app
+DONE(23-01-17): Add editing option to TODO app
+DONE(23-01-17): Add inserting option to TODO app
+DONE(23-01-17): Save date when item is done in TODO app
