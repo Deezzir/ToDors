@@ -4,8 +4,11 @@ use std::cmp::max;
 use std::io::{stdout, Write};
 use std::ops::{Add, Mul};
 
+use termion::event::Key;
 use termion::raw::IntoRawMode;
 use termion::{clear, color};
+
+pub const HIGHLIGHT_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::White);
 
 pub enum LayoutKind {
     Vert,
@@ -75,6 +78,7 @@ impl Layout {
 pub struct UI<W: Write> {
     term: W,
     layouts: Vec<Layout>,
+    pub key: Option<Key>,
 }
 
 impl UI<termion::raw::RawTerminal<std::io::Stdout>> {
@@ -86,6 +90,7 @@ impl UI<termion::raw::RawTerminal<std::io::Stdout>> {
         Self {
             term,
             layouts: Vec::<Layout>::new(),
+            key: None,
         }
     }
 
@@ -135,15 +140,86 @@ impl UI<termion::raw::RawTerminal<std::io::Stdout>> {
         term_style_reset(&mut self.term);
     }
 
+    pub fn edit_field(&mut self, text: &mut String, cur: &mut usize, prefix: String) {
+        let layout = self
+            .layouts
+            .last_mut()
+            .expect("Tried to render outide of any layout");
+        let pos = layout.available_pos();
+
+        if *cur > text.len() {
+            *cur = text.len();
+        }
+
+        if let Some(key) = self.key.take() {
+            match key {
+                Key::Left => {
+                    if *cur > 0 {
+                        *cur -= 1;
+                    }
+                },
+                Key::Right => {
+                    if *cur < text.len() {
+                        *cur += 1;
+                    }
+                },
+                Key::Backspace => {
+                    if *cur > 0 {
+                        *cur -= 1;
+                        if *cur < text.len() {
+                            text.remove(*cur);
+                        }
+                    }
+                },
+                Key::Delete => {
+                    if *cur < text.len() {
+                        text.remove(*cur);
+                    }
+                },
+                Key::Home => *cur = 0,
+                Key::End => *cur = text.len(),
+                Key::Char(c) => {
+                    let c = c as u8;
+                    if c.is_ascii() && c >= 32 && c < 127 {
+                        if *cur > text.len() {
+                            text.push(c as char);
+                        } else {
+                            text.insert(*cur, c as char);
+                        }
+                        *cur += 1;
+                    } else {
+                        self.key = Some(key)
+                    }
+                },
+                _ => self.key = Some(key),
+            }
+        }
+        
+        // Buffer
+        {
+            term_goto(&mut self.term, (pos.y, pos.x));
+            term_write(&mut self.term, &format!("{}{}", prefix, text));
+            layout.add_widget(Point::new(text.len() as u16, 1));
+        }
+
+        // Cursor
+        {
+            term_goto(&mut self.term, (pos.y, pos.x + *cur as u16 + prefix.len() as u16));
+            term_set_style(&mut self.term, HIGHLIGHT_PAIR);
+            term_write(&mut self.term, text.get(*cur..=*cur).unwrap_or(" "));
+            term_style_reset(&mut self.term);
+        }
+    }
+
     pub fn end_layout(&mut self) {
         let layout = self
-        .layouts
-        .pop()
-        .expect("Can't end a non-existing layout. Was there UI:begin_layout()?");
+            .layouts
+            .pop()
+            .expect("Can't end a non-existing layout. Was there UI:begin_layout()?");
         self.layouts
-        .last_mut()
-        .expect("Can't end a non-existing layout. Was there UI:begin_layout()?")
-        .add_widget(layout.size);
+            .last_mut()
+            .expect("Can't end a non-existing layout. Was there UI:begin_layout()?")
+            .add_widget(layout.size);
     }
 
     pub fn end(&mut self) {

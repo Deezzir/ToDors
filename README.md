@@ -12,9 +12,12 @@ cargo run
 
 | Key                                                 | Descritption                   |
 |-----------------------------------------------------|--------------------------------|
-| <kbd>w/↑</kbd>,<kbd>s/↓</kbd>                       | Move UP/DOWN                   |
-| <kbd>SHIFT+w</kbd>,<kbd>SHIFT+s</kbd>               | Drag element UP/DOWN           |
+| <kbd>k/↑</kbd>,<kbd>j/↓</kbd>                       | Move UP/DOWN                   |
+| <kbd>SHIFT+k</kbd>,<kbd>SHIFT+j</kbd>               | Drag element UP/DOWN           |
+| <kbd>g</kbd>,<kbd>G</kbd>                           | Jump to start/end of the list  |
 | <kbd>d</kbd>                                        | Delete 'Done' element          |
+| <kbd>i</kbd>                                        | Insert a new 'Todo' item       |
+| <kbd>r</kbd>                                        | Edit current item       |
 | <kbd>ENTER</kbd>                                    | Action                         |
 | <kbd>TAB</kbd>                                      | Switch between Todos and Dones |
-| <kbd>q/ESC</kbd>                                    | Quit                           |
+| <kbd>q</kbd>                                        | Quit                           |

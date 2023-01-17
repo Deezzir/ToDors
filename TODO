@@ -1,5 +1,5 @@
 TODO: Learn Rust
 TODO: Write a Rust TODO app
-TODO: Add inserting option to TODO app
-TODO: Add editing option to TODO app
 TODO: Add autoresizing of the TODO app UI
+DONE: Add editing option to TODO app
+DONE: Add inserting option to TODO app
