@@ -180,7 +180,7 @@ impl UI<termion::raw::RawTerminal<std::io::Stdout>> {
                 Key::End => *cur = text.len(),
                 Key::Char(c) => {
                     let c = c as u8;
-                    if c.is_ascii() && c >= 32 && c < 127 {
+                    if c.is_ascii() && (32..127).contains(&c) {
                         if *cur > text.len() {
                             text.push(c as char);
                         } else {

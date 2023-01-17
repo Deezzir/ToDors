@@ -7,6 +7,9 @@ use std::env::args;
 use std::fs::File;
 use std::io::{self, stdin, BufRead, Write};
 use std::process::exit;
+use std::time::Duration;
+use std::thread;
+use std::sync::mpsc;
 
 use regex::Regex;
 
@@ -35,16 +38,14 @@ fn main() {
     let mut args = args();
     args.next().unwrap();
 
-    // let file_path = match args.next() {
-    //     Some(file_path) => file_path,
-    //     None => {
-    //         eprintln!("Usage: todo <file>");
-    //         eprintln!("[ERROR]: No file specified");
-    //         exit(1);
-    //     }
-    // };
-
-    let file_path = "TODO";
+    let file_path = match args.next() {
+        Some(file_path) => file_path,
+        None => {
+            eprintln!("Usage: todo <file>");
+            eprintln!("[ERROR]: No file specified");
+            exit(1);
+        }
+    };
 
     let mut quit: bool = false;
     let mut editing = false;
@@ -69,8 +70,16 @@ fn main() {
         }
     }
 
-    let mut keys = stdin().keys();
     let mut ui = UI::new();
+
+    let timeout = Duration::from_millis(100);
+    let (tx, rx) = mpsc::channel();
+    thread::spawn(move || {
+        let mut keys = stdin().keys();
+        while let Some(Ok(key)) = keys.next() {
+            tx.send(key).unwrap();
+        }
+    });
 
     while !quit {
         let (width, _) = terminal_size().unwrap();
@@ -130,7 +139,7 @@ fn main() {
         }
         ui.end();
 
-        if let Some(Ok(key)) = keys.next() {
+        if let Ok(key) = rx.recv_timeout(timeout) {
             if !editing {
                 message.clear();
             }
