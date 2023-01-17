@@ -1,4 +1,4 @@
-# Todo
+# Todors
 
 A terminal based Todo list manager written in Rust. My first Rust project.
 
