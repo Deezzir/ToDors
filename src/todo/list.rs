@@ -214,7 +214,7 @@ pub fn list_move(from: &mut Vec<Item>, to: &mut Vec<Item>, cur: &mut usize) -> R
     }
 }
 
-pub fn parse_items(
+pub fn list_parse(
     file_path: &str,
     todos: &mut Vec<Item>,
     dones: &mut Vec<Item>,
@@ -239,7 +239,7 @@ pub fn parse_items(
     Ok(())
 }
 
-pub fn dump_items(file_path: &str, todos: &[Item], dones: &[Item]) -> std::io::Result<()> {
+pub fn list_dump(file_path: &str, todos: &[Item], dones: &[Item]) -> std::io::Result<()> {
     let mut file = File::create(file_path)?;
     for todo in todos.iter() {
         writeln!(file, "TODO(): {}", todo.text).unwrap();

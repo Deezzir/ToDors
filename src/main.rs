@@ -47,7 +47,7 @@ fn main() {
     let mut dones_stack: Vec<Vec<Item>> = Vec::new();
     let mut cur_done: usize = 0;
 
-    match parse_items(&file_path, &mut todos, &mut dones) {
+    match list_parse(&file_path, &mut todos, &mut dones) {
         Ok(()) => message = format!("Loaded '{}' file.", file_path),
         Err(err) => {
             if err.kind() == io::ErrorKind::NotFound {
@@ -398,7 +398,7 @@ fn main() {
     }
 
     ui.clear();
-    dump_items(&file_path, &todos, &dones).unwrap();
+    list_dump(&file_path, &todos, &dones).unwrap();
     print!(
         "[INFO]: Goodbye, stranger! Your todo list is saved to '{}'.",
         file_path
