@@ -142,7 +142,6 @@ fn main() {
         if let Ok(key) = rx.recv_timeout(timeout) {
             if !editing {
                 message.clear();
-
                 match key {
                     Key::Up | Key::Char('k') => match panel {
                         Panel::Todo => list_up(&todos, &mut cur_todo),
@@ -224,7 +223,7 @@ fn main() {
                         list_record_state(&mut todo_stack, &todos);
                         list_record_state(&mut dones_stack, &dones);
 
-                        let op = match panel {
+                        let result = match panel {
                             Panel::Todo => {
                                 todos[cur_todo].date = Local::now().format("%y-%m-%d").to_string();
                                 list_move(&mut todos, &mut dones, &mut cur_todo)
@@ -234,24 +233,25 @@ fn main() {
                                 list_move(&mut dones, &mut todos, &mut cur_done)
                             }
                         };
-                        match op {
-                            Ok(()) => {
-                                if panel == Panel::Todo {
+                        match result {
+                            Ok(()) => match panel {
+                                Panel::Todo => {
                                     operation_stack.push(Operation::new(
                                         Action::Move,
-                                        cur_done,
+                                        cur_todo,
                                         Panel::Todo,
                                     ));
                                     message.push_str("Done! Great job!");
-                                } else {
+                                }
+                                Panel::Done => {
                                     operation_stack.push(Operation::new(
                                         Action::Move,
                                         cur_done,
                                         Panel::Done,
                                     ));
-                                    message.push_str("Not done yet? Keep going!");
+                                    message.push_str("Not done yet? Keep going!")
                                 }
-                            }
+                            },
                             Err(err) => {
                                 message.push_str(err);
                                 list_revert_state(&mut todo_stack, &mut todos).unwrap();
@@ -283,6 +283,13 @@ fn main() {
                     },
                     Key::Char('i') => match panel {
                         Panel::Todo => {
+                            list_record_state(&mut todo_stack, &todos);
+                            operation_stack.push(Operation::new(
+                                Action::Insert,
+                                cur_todo,
+                                Panel::Todo,
+                            ));
+
                             list_insert(&mut todos, &mut cur_todo);
                             editing_cursor = 0;
                             editing = true;
@@ -299,6 +306,24 @@ fn main() {
                             editing_cursor = dones[cur_done].text.len();
                         }
                         if editing_cursor > 0 {
+                            match panel {
+                                Panel::Todo => {
+                                    list_record_state(&mut todo_stack, &todos);
+                                    operation_stack.push(Operation::new(
+                                        Action::Replace,
+                                        cur_todo,
+                                        Panel::Todo,
+                                    ));
+                                }
+                                Panel::Done => {
+                                    list_record_state(&mut dones_stack, &dones);
+                                    operation_stack.push(Operation::new(
+                                        Action::Replace,
+                                        cur_done,
+                                        Panel::Done,
+                                    ));
+                                }
+                            };
                             editing = true;
                             message.push_str("Editing current item.");
                         }
@@ -343,7 +368,6 @@ fn main() {
                 match key {
                     Key::Char('\n') | Key::Esc => {
                         match panel {
-                            // TODO: this will remove the TODO if it's empty, however its not allowed
                             Panel::Todo => {
                                 if todos[cur_todo].text.is_empty() {
                                     list_delete(&mut todos, &mut cur_todo).unwrap();

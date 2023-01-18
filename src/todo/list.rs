@@ -10,7 +10,7 @@ use termion::event::Key;
 
 pub const MAX_STACK_SIZE: usize = 20;
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum Panel {
     Todo,
     Done,
@@ -30,6 +30,8 @@ pub enum Action {
     DragUp,
     DragDown,
     Move,
+    Insert,
+    Replace,
 }
 
 impl fmt::Display for Action {
@@ -39,6 +41,8 @@ impl fmt::Display for Action {
             Action::DragUp => write!(f, "Drag up"),
             Action::DragDown => write!(f, "Drag down"),
             Action::Move => write!(f, "Move"),
+            Action::Insert => write!(f, "Insert"),
+            Action::Replace => write!(f, "Replace"),
         }
     }
 }
