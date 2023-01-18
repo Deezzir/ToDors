@@ -19,7 +19,8 @@ cargo run
 | <kbd>g</kbd>,<kbd>G</kbd>                           | Jump to start/end of the list  |
 | <kbd>d</kbd>                                        | Delete 'Done' element          |
 | <kbd>i</kbd>                                        | Insert a new 'Todo' item       |
-| <kbd>r</kbd>                                        | Edit current item       |
+| <kbd>u</kbd>                                        | Undo last action               |
+| <kbd>r</kbd>                                        | Edit current item              |
 | <kbd>ENTER</kbd>                                    | Action                         |
 | <kbd>TAB</kbd>                                      | Switch between Todos and Dones |
 | <kbd>q</kbd>                                        | Quit                           |

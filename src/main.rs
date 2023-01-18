@@ -2,10 +2,8 @@ extern crate regex;
 extern crate termion;
 mod todo;
 
-use std::cmp::min;
 use std::env::args;
-use std::fs::File;
-use std::io::{self, stdin, BufRead, Write};
+use std::io::{self, stdin};
 use std::process::exit;
 use std::sync::mpsc;
 use std::thread;
@@ -13,44 +11,12 @@ use std::time::Duration;
 
 use chrono::Local;
 
-use regex::Regex;
-
 use termion::event::Key;
 use termion::input::TermRead;
 use termion::terminal_size;
 
+use todo::list::*;
 use todo::ui::*;
-
-#[derive(PartialEq)]
-enum Panel {
-    Todo,
-    Done,
-}
-
-impl Panel {
-    fn togle(&self) -> Panel {
-        match self {
-            Panel::Todo => Panel::Done,
-            Panel::Done => Panel::Todo,
-        }
-    }
-}
-
-struct Item {
-    text: String,
-    date: String,
-    done: bool,
-}
-
-impl Item {
-    fn new(text: String, date: String) -> Self {
-        Self {
-            text,
-            date,
-            done: false,
-        }
-    }
-}
 
 fn main() {
     let mut args = args();
@@ -71,9 +37,14 @@ fn main() {
     let mut panel = Panel::Todo;
     let mut message: String;
 
+    let mut operation_stack: Vec<Operation> = Vec::new();
+
     let mut todos: Vec<Item> = Vec::<Item>::new();
+    let mut todo_stack: Vec<Vec<Item>> = Vec::new();
     let mut cur_todo: usize = 0;
+
     let mut dones: Vec<Item> = Vec::<Item>::new();
+    let mut dones_stack: Vec<Vec<Item>> = Vec::new();
     let mut cur_done: usize = 0;
 
     match parse_items(&file_path, &mut todos, &mut dones) {
@@ -181,14 +152,6 @@ fn main() {
                         Panel::Todo => list_down(&todos, &mut cur_todo),
                         Panel::Done => list_down(&dones, &mut cur_done),
                     },
-                    Key::Char('K') => match panel {
-                        Panel::Todo => list_drag_up(&mut todos, &mut cur_todo),
-                        Panel::Done => list_drag_up(&mut dones, &mut cur_done),
-                    },
-                    Key::Char('J') => match panel {
-                        Panel::Todo => list_drag_down(&mut todos, &mut cur_todo),
-                        Panel::Done => list_drag_down(&mut dones, &mut cur_done),
-                    },
                     Key::Char('g') => match panel {
                         Panel::Todo => list_first(&mut cur_todo),
                         Panel::Done => list_first(&mut cur_done),
@@ -197,13 +160,125 @@ fn main() {
                         Panel::Todo => list_last(&todos, &mut cur_todo),
                         Panel::Done => list_last(&dones, &mut cur_done),
                     },
+                    Key::Char('K') => match panel {
+                        Panel::Todo => {
+                            list_record_state(&mut todo_stack, &todos);
+                            match list_drag_up(&mut todos, &mut cur_todo) {
+                                Ok(()) => operation_stack.push(Operation::new(
+                                    Action::DragUp,
+                                    cur_todo + 1,
+                                    Panel::Todo,
+                                )),
+                                Err(err) => {
+                                    message.push_str(err);
+                                    list_revert_state(&mut todo_stack, &mut todos).unwrap();
+                                }
+                            };
+                        }
+                        Panel::Done => {
+                            list_record_state(&mut dones_stack, &dones);
+                            match list_drag_up(&mut dones, &mut cur_done) {
+                                Ok(()) => operation_stack.push(Operation::new(
+                                    Action::DragUp,
+                                    cur_done + 1,
+                                    Panel::Done,
+                                )),
+                                Err(err) => {
+                                    message.push_str(err);
+                                    list_revert_state(&mut dones_stack, &mut dones).unwrap();
+                                }
+                            };
+                        }
+                    },
+                    Key::Char('J') => match panel {
+                        Panel::Todo => {
+                            list_record_state(&mut todo_stack, &todos);
+                            match list_drag_down(&mut todos, &mut cur_todo) {
+                                Ok(()) => operation_stack.push(Operation::new(
+                                    Action::DragDown,
+                                    cur_todo - 1,
+                                    Panel::Todo,
+                                )),
+                                Err(err) => {
+                                    message.push_str(err);
+                                    list_revert_state(&mut todo_stack, &mut todos).unwrap();
+                                }
+                            };
+                        }
+                        Panel::Done => {
+                            list_record_state(&mut dones_stack, &dones);
+                            match list_drag_down(&mut dones, &mut cur_done) {
+                                Ok(()) => operation_stack.push(Operation::new(
+                                    Action::DragDown,
+                                    cur_done - 1,
+                                    Panel::Done,
+                                )),
+                                Err(err) => {
+                                    message.push_str(err);
+                                    list_revert_state(&mut dones_stack, &mut dones).unwrap();
+                                }
+                            };
+                        }
+                    },
+                    Key::Char('\n') => {
+                        list_record_state(&mut todo_stack, &todos);
+                        list_record_state(&mut dones_stack, &dones);
+
+                        let op = match panel {
+                            Panel::Todo => {
+                                todos[cur_todo].date = Local::now().format("%y-%m-%d").to_string();
+                                list_move(&mut todos, &mut dones, &mut cur_todo)
+                            }
+                            Panel::Done => {
+                                dones[cur_done].date = String::new();
+                                list_move(&mut dones, &mut todos, &mut cur_done)
+                            }
+                        };
+                        match op {
+                            Ok(()) => {
+                                if panel == Panel::Todo {
+                                    operation_stack.push(Operation::new(
+                                        Action::Move,
+                                        cur_done,
+                                        Panel::Todo,
+                                    ));
+                                    message.push_str("Done! Great job!");
+                                } else {
+                                    operation_stack.push(Operation::new(
+                                        Action::Move,
+                                        cur_done,
+                                        Panel::Done,
+                                    ));
+                                    message.push_str("Not done yet? Keep going!");
+                                }
+                            }
+                            Err(err) => {
+                                message.push_str(err);
+                                list_revert_state(&mut todo_stack, &mut todos).unwrap();
+                                list_revert_state(&mut dones_stack, &mut dones).unwrap();
+                            }
+                        };
+                    }
                     Key::Char('d') => match panel {
                         Panel::Todo => {
                             message.push_str("Can't delete a TODO item. Mark it as DONE first.")
                         }
                         Panel::Done => {
-                            list_delete(&mut dones, &mut cur_done);
-                            message.push_str("DONE item deleted.");
+                            list_record_state(&mut dones_stack, &dones);
+                            match list_delete(&mut dones, &mut cur_done) {
+                                Ok(()) => {
+                                    message.push_str("DONE item deleted.");
+                                    operation_stack.push(Operation::new(
+                                        Action::Delete,
+                                        cur_done,
+                                        Panel::Done,
+                                    ));
+                                }
+                                Err(err) => {
+                                    message.push_str(err);
+                                    list_revert_state(&mut dones_stack, &mut dones).unwrap();
+                                }
+                            };
                         }
                     },
                     Key::Char('i') => match panel {
@@ -228,22 +303,36 @@ fn main() {
                             message.push_str("Editing current item.");
                         }
                     }
-                    Key::Char('\n') => match panel {
-                        Panel::Todo => {
-                            todos[cur_todo].done = true;
-                            todos[cur_todo].date = Local::now().format("%y-%m-%d").to_string();
-
-                            list_move(&mut todos, &mut dones, &mut cur_todo);
-                            message.push_str("Done! Great job!");
+                    Key::Char('u') => {
+                        let op = operation_stack.pop();
+                        match op {
+                            Some(op) => {
+                                match op.action {
+                                    Action::Move => {
+                                        list_revert_state(&mut dones_stack, &mut dones).unwrap();
+                                        list_revert_state(&mut todo_stack, &mut todos).unwrap();
+                                    }
+                                    _ => match op.panel {
+                                        Panel::Todo => {
+                                            list_revert_state(&mut todo_stack, &mut todos).unwrap();
+                                        }
+                                        Panel::Done => {
+                                            list_revert_state(&mut dones_stack, &mut dones)
+                                                .unwrap();
+                                        }
+                                    },
+                                }
+                                if op.panel == Panel::Todo {
+                                    cur_todo = op.cur;
+                                } else {
+                                    cur_done = op.cur;
+                                }
+                                panel = op.panel;
+                                message.push_str(&format!("Undo: {}", op.action));
+                            }
+                            None => message.push_str("Nothing to undo."),
                         }
-                        Panel::Done => {
-                            dones[cur_done].done = false;
-                            dones[cur_done].date = String::new();
-
-                            list_move(&mut dones, &mut todos, &mut cur_done);
-                            message.push_str("Back to TODO list...");
-                        }
-                    },
+                    }
                     Key::Char('\t') => {
                         panel = panel.togle();
                     }
@@ -254,14 +343,15 @@ fn main() {
                 match key {
                     Key::Char('\n') | Key::Esc => {
                         match panel {
+                            // TODO: this will remove the TODO if it's empty, however its not allowed
                             Panel::Todo => {
                                 if todos[cur_todo].text.is_empty() {
-                                    list_delete(&mut todos, &mut cur_todo);
+                                    list_delete(&mut todos, &mut cur_todo).unwrap();
                                 }
                             }
                             Panel::Done => {
                                 if dones[cur_done].text.is_empty() {
-                                    list_delete(&mut dones, &mut cur_done);
+                                    list_delete(&mut dones, &mut cur_done).unwrap();
                                 }
                             }
                         }
@@ -289,152 +379,4 @@ fn main() {
         "[INFO]: Goodbye, stranger! Your todo list is saved to '{}'.",
         file_path
     );
-}
-
-fn list_up(list: &Vec<Item>, cur: &mut usize) {
-    if *cur > 0 && !list.is_empty() {
-        *cur -= 1;
-    }
-}
-
-fn list_down(list: &Vec<Item>, cur: &mut usize) {
-    if !list.is_empty() {
-        *cur = min(*cur + 1, list.len() - 1)
-    }
-}
-
-fn list_drag_up(list: &mut Vec<Item>, cur: &mut usize) {
-    if *cur != 0 && list.len() > 1 {
-        list.swap(*cur, *cur - 1);
-        *cur -= 1;
-    }
-}
-
-fn list_drag_down(list: &mut Vec<Item>, cur: &mut usize) {
-    if *cur < list.len() - 1 && list.len() > 1 {
-        list.swap(*cur, *cur + 1);
-        *cur += 1;
-    }
-}
-
-fn list_first(cur: &mut usize) {
-    if *cur != 0 {
-        *cur = 0;
-    }
-}
-
-fn list_last(list: &Vec<Item>, cur: &mut usize) {
-    if !list.is_empty() {
-        *cur = list.len() - 1;
-    }
-}
-
-fn list_insert(list: &mut Vec<Item>, cur: &mut usize) {
-    list.insert(*cur, Item::new(String::new(), String::new()));
-}
-
-fn list_delete(list: &mut Vec<Item>, cur: &mut usize) {
-    if *cur < list.len() {
-        list.remove(*cur);
-        if !list.is_empty() {
-            *cur = min(*cur, list.len() - 1);
-        } else {
-            *cur = 0;
-        }
-    }
-}
-
-fn list_edit(item: &mut Item, cur: &mut usize, mut key: Option<Key>) {
-    if *cur > item.text.len() {
-        *cur = item.text.len();
-    }
-
-    if let Some(key) = key.take() {
-        match key {
-            Key::Left => {
-                if *cur > 0 {
-                    *cur -= 1;
-                }
-            }
-            Key::Right => {
-                if *cur < item.text.len() {
-                    *cur += 1;
-                }
-            }
-            Key::Backspace => {
-                if *cur > 0 {
-                    *cur -= 1;
-                    if *cur < item.text.len() {
-                        item.text.remove(*cur);
-                    }
-                }
-            }
-            Key::Delete => {
-                if *cur < item.text.len() {
-                    item.text.remove(*cur);
-                }
-            }
-            Key::Home => *cur = 0,
-            Key::End => *cur = item.text.len(),
-            Key::Char(c) => {
-                let c = c as u8;
-                if c.is_ascii() && (32..127).contains(&c) {
-                    if *cur > item.text.len() {
-                        item.text.push(c as char);
-                    } else {
-                        item.text.insert(*cur, c as char);
-                    }
-                    *cur += 1;
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
-fn list_move(from: &mut Vec<Item>, to: &mut Vec<Item>, cur: &mut usize) {
-    if *cur < from.len() {
-        to.push(from.remove(*cur));
-        if !from.is_empty() {
-            *cur = min(*cur, from.len() - 1);
-        } else {
-            *cur = 0;
-        }
-    }
-}
-
-fn parse_items(
-    file_path: &str,
-    todos: &mut Vec<Item>,
-    dones: &mut Vec<Item>,
-) -> std::io::Result<()> {
-    let file = File::open(file_path)?;
-    let re_todo = Regex::new(r"^TODO\(\): (.*)$").unwrap();
-    let re_done = Regex::new(r"^DONE\((\d{2}-\d{2}-\d{2})\): (.*)$").unwrap();
-
-    for (id, line) in io::BufReader::new(file).lines().enumerate() {
-        let line = line?;
-        if let Some(caps) = re_todo.captures(&line) {
-            let item = Item::new(caps[1].to_string(), String::new());
-            todos.push(item);
-        } else if let Some(caps) = re_done.captures(&line) {
-            let item = Item::new(caps[2].to_string(), caps[1].to_string());
-            dones.push(item);
-        } else {
-            eprintln!("[ERROR]: {}:{}: invalid format", file_path, id + 1);
-            exit(1);
-        }
-    }
-    Ok(())
-}
-
-fn dump_items(file_path: &str, todos: &[Item], dones: &[Item]) -> std::io::Result<()> {
-    let mut file = File::create(file_path)?;
-    for todo in todos.iter() {
-        writeln!(file, "TODO(): {}", todo.text).unwrap();
-    }
-    for done in dones.iter() {
-        writeln!(file, "DONE({}): {}", done.date, done.text).unwrap();
-    }
-    Ok(())
 }
