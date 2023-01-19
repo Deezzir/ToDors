@@ -1,4 +1,3 @@
-use std::fmt;
 use std::cmp::min;
 use std::fs::File;
 use std::io::{self, BufRead, Write};
@@ -9,55 +8,6 @@ use regex::Regex;
 use termion::event::Key;
 
 pub const MAX_STACK_SIZE: usize = 20;
-
-#[derive(PartialEq, Clone)]
-pub enum Panel {
-    Todo,
-    Done,
-}
-
-impl Panel {
-    pub fn togle(&self) -> Panel {
-        match self {
-            Panel::Todo => Panel::Done,
-            Panel::Done => Panel::Todo,
-        }
-    }
-}
-
-pub enum Action {
-    Delete,
-    DragUp,
-    DragDown,
-    Move,
-    Insert,
-    Replace,
-}
-
-impl fmt::Display for Action {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Action::Delete => write!(f, "Delete"),
-            Action::DragUp => write!(f, "Drag up"),
-            Action::DragDown => write!(f, "Drag down"),
-            Action::Move => write!(f, "Move"),
-            Action::Insert => write!(f, "Insert"),
-            Action::Replace => write!(f, "Replace"),
-        }
-    }
-}
-
-pub struct Operation {
-    pub action: Action,
-    pub cur: usize,
-    pub panel: Panel,
-}
-
-impl Operation {
-    pub fn new(action: Action, cur: usize, panel: Panel) -> Self {
-        Self { action, cur, panel }
-    }
-}
 
 #[derive(Clone)]
 pub struct Item {

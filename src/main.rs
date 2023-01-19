@@ -4,6 +4,7 @@ mod todo;
 
 use std::env::args;
 use std::io::{self, stdin};
+use std::fmt;
 use std::process::exit;
 use std::sync::mpsc;
 use std::thread;
@@ -17,6 +18,55 @@ use termion::terminal_size;
 
 use todo::list::*;
 use todo::ui::*;
+
+#[derive(PartialEq, Clone)]
+pub enum Panel {
+    Todo,
+    Done,
+}
+
+impl Panel {
+    pub fn togle(&self) -> Panel {
+        match self {
+            Panel::Todo => Panel::Done,
+            Panel::Done => Panel::Todo,
+        }
+    }
+}
+
+pub enum Action {
+    Delete,
+    DragUp,
+    DragDown,
+    Move,
+    Insert,
+    Replace,
+}
+
+impl fmt::Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            Action::Delete => write!(f, "Delete"),
+            Action::DragUp => write!(f, "Drag up"),
+            Action::DragDown => write!(f, "Drag down"),
+            Action::Move => write!(f, "Move"),
+            Action::Insert => write!(f, "Insert"),
+            Action::Replace => write!(f, "Replace"),
+        }
+    }
+}
+
+pub struct Operation {
+    pub action: Action,
+    pub cur: usize,
+    pub panel: Panel,
+}
+
+impl Operation {
+    pub fn new(action: Action, cur: usize, panel: Panel) -> Self {
+        Self { action, cur, panel }
+    }
+}
 
 fn main() {
     let mut args = args();
@@ -59,8 +109,6 @@ fn main() {
         }
     }
 
-    let mut ui = UI::new();
-
     let timeout = Duration::from_millis(100);
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
@@ -70,12 +118,30 @@ fn main() {
         }
     });
 
+    let mut ui = UI::new();
     while !quit {
         let (width, _) = terminal_size().unwrap();
 
         ui.begin(Point::new(0, 0), LayoutKind::Vert);
         {
-            ui.label(&format!("[MESSAGE]: {}", message));
+            ui.begin_layout(LayoutKind::Horz);
+            {
+                ui.begin_layout(LayoutKind::Vert);
+                {
+                    ui.label(&format!("[MESSAGE]: {}", message));
+                }
+                ui.end_layout();
+                ui.begin_layout(LayoutKind::Vert);
+                {
+                    ui.label(&format!(
+                        "[DATE]: {}",
+                        Local::now().format("%Y-%m-%d %H:%M:%S")
+                    ));
+                }
+                ui.end_layout();
+            }
+            ui.end_layout();
+
             ui.label("");
 
             ui.begin_layout(LayoutKind::Horz);
