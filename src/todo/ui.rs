@@ -7,7 +7,7 @@ use std::ops::{Add, Mul};
 use termion::raw::IntoRawMode;
 use termion::{clear, color};
 
-pub const HIGHLIGHT_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::White);
+use crate::HIGHLIGHT_PAIR;
 
 pub enum LayoutKind {
     Vert,

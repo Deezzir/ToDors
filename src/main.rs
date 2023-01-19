@@ -14,10 +14,13 @@ use chrono::Local;
 
 use termion::event::Key;
 use termion::input::TermRead;
-use termion::terminal_size;
+use termion::{terminal_size, color};
 
 use todo::list::*;
 use todo::ui::*;
+
+const MAX_STACK_SIZE: usize = 20;
+const HIGHLIGHT_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::White);
 
 #[derive(PartialEq, Clone)]
 pub enum Panel {

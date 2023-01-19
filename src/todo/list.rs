@@ -7,7 +7,7 @@ use regex::Regex;
 
 use termion::event::Key;
 
-pub const MAX_STACK_SIZE: usize = 20;
+use crate::MAX_STACK_SIZE;
 
 #[derive(Clone)]
 pub struct Item {
