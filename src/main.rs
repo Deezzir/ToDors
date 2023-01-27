@@ -155,8 +155,7 @@ fn main() {
                     Key::Char('\n') => app.move_item(),
                     Key::Char('d') => app.delete_item(),
                     Key::Char('i') => {
-                        app.insert_item();
-                        editing_cursor = app.edit_item();
+                        editing_cursor = app.insert_item();
                         editing = editing_cursor == 0;
                     }
                     Key::Char('r') => {
@@ -171,9 +170,8 @@ fn main() {
             } else {
                 match key {
                     Key::Char('\n') | Key::Esc => {
-                        app.finish_edit();
-                        editing = false;
-                        editing_cursor = 0;
+                        editing = app.finish_edit();
+                        editing_cursor = if editing { editing_cursor } else { 0 };
                     }
                     _ => app.edit_item_with(&mut editing_cursor, Some(key)),
                 }
