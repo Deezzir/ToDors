@@ -137,7 +137,7 @@ impl UI<termion::raw::RawTerminal<std::io::Stdout>> {
         term_style_reset(&mut self.term);
     }
 
-    pub fn edit_label(&mut self, text: &mut String, cur: &mut usize, prefix: String) {
+    pub fn edit_label(&mut self, text: &String, cur: usize, prefix: String) {
         let layout = self
             .layouts
             .last_mut()
@@ -155,10 +155,10 @@ impl UI<termion::raw::RawTerminal<std::io::Stdout>> {
         {
             term_goto(
                 &mut self.term,
-                (pos.y, pos.x + *cur as u16 + prefix.len() as u16),
+                (pos.y, pos.x + cur as u16 + prefix.len() as u16),
             );
             term_set_style(&mut self.term, HIGHLIGHT_PAIR);
-            term_write(&mut self.term, text.get(*cur..=*cur).unwrap_or(" "));
+            term_write(&mut self.term, text.get(cur..=cur).unwrap_or(" "));
             term_style_reset(&mut self.term);
         }
     }

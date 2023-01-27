@@ -1,10 +1,9 @@
 extern crate regex;
 extern crate termion;
-mod todo;
+mod mods;
 
 use std::env::args;
-use std::io::{self, stdin};
-use std::fmt;
+use std::io::stdin;
 use std::process::exit;
 use std::sync::mpsc;
 use std::thread;
@@ -14,67 +13,19 @@ use chrono::Local;
 
 use termion::event::Key;
 use termion::input::TermRead;
-use termion::{terminal_size, color};
+use termion::{color, terminal_size};
 
-use todo::list::*;
-use todo::ui::*;
+use mods::todo::*;
+use mods::ui::*;
 
 const MAX_STACK_SIZE: usize = 20;
 const HIGHLIGHT_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::White);
-
-#[derive(PartialEq, Clone)]
-pub enum Panel {
-    Todo,
-    Done,
-}
-
-impl Panel {
-    pub fn togle(&self) -> Panel {
-        match self {
-            Panel::Todo => Panel::Done,
-            Panel::Done => Panel::Todo,
-        }
-    }
-}
-
-pub enum Action {
-    Delete,
-    DragUp,
-    DragDown,
-    Move,
-    Insert,
-    Replace,
-}
-
-impl fmt::Display for Action {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match *self {
-            Action::Delete => write!(f, "Delete"),
-            Action::DragUp => write!(f, "Drag up"),
-            Action::DragDown => write!(f, "Drag down"),
-            Action::Move => write!(f, "Move"),
-            Action::Insert => write!(f, "Insert"),
-            Action::Replace => write!(f, "Replace"),
-        }
-    }
-}
-
-pub struct Operation {
-    pub action: Action,
-    pub cur: usize,
-    pub panel: Panel,
-}
-
-impl Operation {
-    pub fn new(action: Action, cur: usize, panel: Panel) -> Self {
-        Self { action, cur, panel }
-    }
-}
 
 fn main() {
     let mut args = args();
     args.next().unwrap();
 
+    // Get file path
     let file_path = match args.next() {
         Some(file_path) => file_path,
         None => {
@@ -84,34 +35,7 @@ fn main() {
         }
     };
 
-    let mut quit: bool = false;
-    let mut editing = false;
-    let mut editing_cursor = 0;
-    let mut panel = Panel::Todo;
-    let mut message: String;
-
-    let mut operation_stack: Vec<Operation> = Vec::new();
-
-    let mut todos: Vec<Item> = Vec::<Item>::new();
-    let mut todo_stack: Vec<Vec<Item>> = Vec::new();
-    let mut cur_todo: usize = 0;
-
-    let mut dones: Vec<Item> = Vec::<Item>::new();
-    let mut dones_stack: Vec<Vec<Item>> = Vec::new();
-    let mut cur_done: usize = 0;
-
-    match list_parse(&file_path, &mut todos, &mut dones) {
-        Ok(()) => message = format!("Loaded '{}' file.", file_path),
-        Err(err) => {
-            if err.kind() == io::ErrorKind::NotFound {
-                message = format!("File '{}' not found. Creating new one.", file_path);
-            } else {
-                eprintln!("Error while opening file '{}': {:?}", file_path, err);
-                exit(1);
-            }
-        }
-    }
-
+    // Keyboard input thread that will poll for input and send it to the main thread
     let timeout = Duration::from_millis(100);
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
@@ -121,7 +45,12 @@ fn main() {
         }
     });
 
+    let mut quit: bool = false;
+    let mut editing: bool = false;
+    let mut list: List = List::new(&file_path);
     let mut ui = UI::new();
+
+    // Main loop
     while !quit {
         let (width, _) = terminal_size().unwrap();
 
@@ -131,7 +60,7 @@ fn main() {
             {
                 ui.begin_layout(LayoutKind::Vert);
                 {
-                    ui.label(&format!("[MESSAGE]: {}", message));
+                    ui.label(&format!("[MESSAGE]: {}", list.get_message()));
                 }
                 ui.end_layout();
                 ui.begin_layout(LayoutKind::Vert);
@@ -149,6 +78,11 @@ fn main() {
 
             ui.begin_layout(LayoutKind::Horz);
             {
+                let panel = list.get_panel();
+                let editing_cursor = list.get_editing_cursor();
+                let cur_todo = list.get_cur_todo();
+                let cur_done = list.get_cur_done();
+
                 ui.begin_layout(LayoutKind::Vert);
                 {
                     if panel == Panel::Todo {
@@ -157,12 +91,12 @@ fn main() {
                         ui.label(" TODO ");
                     }
                     ui.label("-".repeat(width as usize / 2).as_str());
-                    for (id, todo) in todos.iter_mut().enumerate() {
-                        if id == cur_todo && panel == Panel::Todo {
+                    for (i, todo) in list.get_mut_todos().iter_mut().enumerate() {
+                        if i == cur_todo && panel == Panel::Todo {
                             if editing {
                                 ui.edit_label(
-                                    &mut todo.text,
-                                    &mut editing_cursor,
+                                    &todo.text,
+                                    editing_cursor,
                                     "- [ ] ".to_string(),
                                 );
                             } else {
@@ -183,12 +117,12 @@ fn main() {
                         ui.label(" DONE ");
                     }
                     ui.label("-".repeat(width as usize / 2).as_str());
-                    for (id, done) in dones.iter_mut().enumerate() {
-                        if id == cur_done && panel == Panel::Done {
+                    for (i, done) in list.get_mut_dones().iter_mut().enumerate() {
+                        if i == cur_done && panel == Panel::Done {
                             if editing {
                                 ui.edit_label(
-                                    &mut done.text,
-                                    &mut editing_cursor,
+                                    &done.text,
+                                    editing_cursor,
                                     "- [X] ".to_string(),
                                 );
                             } else {
@@ -210,265 +144,36 @@ fn main() {
 
         if let Ok(key) = rx.recv_timeout(timeout) {
             if !editing {
-                message.clear();
+                list.clear_message();
                 match key {
-                    Key::Up | Key::Char('k') => match panel {
-                        Panel::Todo => list_up(&todos, &mut cur_todo),
-                        Panel::Done => list_up(&dones, &mut cur_done),
-                    },
-                    Key::Down | Key::Char('j') => match panel {
-                        Panel::Todo => list_down(&todos, &mut cur_todo),
-                        Panel::Done => list_down(&dones, &mut cur_done),
-                    },
-                    Key::Char('g') => match panel {
-                        Panel::Todo => list_first(&mut cur_todo),
-                        Panel::Done => list_first(&mut cur_done),
-                    },
-                    Key::Char('G') => match panel {
-                        Panel::Todo => list_last(&todos, &mut cur_todo),
-                        Panel::Done => list_last(&dones, &mut cur_done),
-                    },
-                    Key::Char('K') => match panel {
-                        Panel::Todo => {
-                            list_record_state(&mut todo_stack, &todos);
-                            match list_drag_up(&mut todos, &mut cur_todo) {
-                                Ok(()) => operation_stack.push(Operation::new(
-                                    Action::DragUp,
-                                    cur_todo + 1,
-                                    Panel::Todo,
-                                )),
-                                Err(err) => {
-                                    message.push_str(err);
-                                    list_revert_state(&mut todo_stack, &mut todos).unwrap();
-                                }
-                            };
-                        }
-                        Panel::Done => {
-                            list_record_state(&mut dones_stack, &dones);
-                            match list_drag_up(&mut dones, &mut cur_done) {
-                                Ok(()) => operation_stack.push(Operation::new(
-                                    Action::DragUp,
-                                    cur_done + 1,
-                                    Panel::Done,
-                                )),
-                                Err(err) => {
-                                    message.push_str(err);
-                                    list_revert_state(&mut dones_stack, &mut dones).unwrap();
-                                }
-                            };
-                        }
-                    },
-                    Key::Char('J') => match panel {
-                        Panel::Todo => {
-                            list_record_state(&mut todo_stack, &todos);
-                            match list_drag_down(&mut todos, &mut cur_todo) {
-                                Ok(()) => operation_stack.push(Operation::new(
-                                    Action::DragDown,
-                                    cur_todo - 1,
-                                    Panel::Todo,
-                                )),
-                                Err(err) => {
-                                    message.push_str(err);
-                                    list_revert_state(&mut todo_stack, &mut todos).unwrap();
-                                }
-                            };
-                        }
-                        Panel::Done => {
-                            list_record_state(&mut dones_stack, &dones);
-                            match list_drag_down(&mut dones, &mut cur_done) {
-                                Ok(()) => operation_stack.push(Operation::new(
-                                    Action::DragDown,
-                                    cur_done - 1,
-                                    Panel::Done,
-                                )),
-                                Err(err) => {
-                                    message.push_str(err);
-                                    list_revert_state(&mut dones_stack, &mut dones).unwrap();
-                                }
-                            };
-                        }
-                    },
-                    Key::Char('\n') => {
-                        list_record_state(&mut todo_stack, &todos);
-                        list_record_state(&mut dones_stack, &dones);
-
-                        let result = match panel {
-                            Panel::Todo => {
-                                todos[cur_todo].date = Local::now().format("%y-%m-%d").to_string();
-                                list_move(&mut todos, &mut dones, &mut cur_todo)
-                            }
-                            Panel::Done => {
-                                dones[cur_done].date = String::new();
-                                list_move(&mut dones, &mut todos, &mut cur_done)
-                            }
-                        };
-                        match result {
-                            Ok(()) => match panel {
-                                Panel::Todo => {
-                                    operation_stack.push(Operation::new(
-                                        Action::Move,
-                                        cur_todo,
-                                        Panel::Todo,
-                                    ));
-                                    message.push_str("Done! Great job!");
-                                }
-                                Panel::Done => {
-                                    operation_stack.push(Operation::new(
-                                        Action::Move,
-                                        cur_done,
-                                        Panel::Done,
-                                    ));
-                                    message.push_str("Not done yet? Keep going!")
-                                }
-                            },
-                            Err(err) => {
-                                message.push_str(err);
-                                list_revert_state(&mut todo_stack, &mut todos).unwrap();
-                                list_revert_state(&mut dones_stack, &mut dones).unwrap();
-                            }
-                        };
-                    }
-                    Key::Char('d') => match panel {
-                        Panel::Todo => {
-                            message.push_str("Can't delete a TODO item. Mark it as DONE first.")
-                        }
-                        Panel::Done => {
-                            list_record_state(&mut dones_stack, &dones);
-                            match list_delete(&mut dones, &mut cur_done) {
-                                Ok(()) => {
-                                    message.push_str("DONE item deleted.");
-                                    operation_stack.push(Operation::new(
-                                        Action::Delete,
-                                        cur_done,
-                                        Panel::Done,
-                                    ));
-                                }
-                                Err(err) => {
-                                    message.push_str(err);
-                                    list_revert_state(&mut dones_stack, &mut dones).unwrap();
-                                }
-                            };
-                        }
-                    },
-                    Key::Char('i') => match panel {
-                        Panel::Todo => {
-                            list_record_state(&mut todo_stack, &todos);
-                            operation_stack.push(Operation::new(
-                                Action::Insert,
-                                cur_todo,
-                                Panel::Todo,
-                            ));
-
-                            list_insert(&mut todos, &mut cur_todo);
-                            editing_cursor = 0;
-                            editing = true;
-                            message.push_str("What needs to be done?");
-                        }
-                        Panel::Done => {
-                            message.push_str("Can't insert a new DONE item. Only new TODO allowed.")
-                        }
-                    },
-                    Key::Char('r') => {
-                        if panel == Panel::Todo && !todos.is_empty() {
-                            editing_cursor = todos[cur_todo].text.len();
-                        } else if panel == Panel::Done && !dones.is_empty() {
-                            editing_cursor = dones[cur_done].text.len();
-                        }
-                        if editing_cursor > 0 {
-                            match panel {
-                                Panel::Todo => {
-                                    list_record_state(&mut todo_stack, &todos);
-                                    operation_stack.push(Operation::new(
-                                        Action::Replace,
-                                        cur_todo,
-                                        Panel::Todo,
-                                    ));
-                                }
-                                Panel::Done => {
-                                    list_record_state(&mut dones_stack, &dones);
-                                    operation_stack.push(Operation::new(
-                                        Action::Replace,
-                                        cur_done,
-                                        Panel::Done,
-                                    ));
-                                }
-                            };
-                            editing = true;
-                            message.push_str("Editing current item.");
-                        }
-                    }
-                    Key::Char('u') => {
-                        let op = operation_stack.pop();
-                        match op {
-                            Some(op) => {
-                                match op.action {
-                                    Action::Move => {
-                                        list_revert_state(&mut dones_stack, &mut dones).unwrap();
-                                        list_revert_state(&mut todo_stack, &mut todos).unwrap();
-                                    }
-                                    _ => match op.panel {
-                                        Panel::Todo => {
-                                            list_revert_state(&mut todo_stack, &mut todos).unwrap();
-                                        }
-                                        Panel::Done => {
-                                            list_revert_state(&mut dones_stack, &mut dones)
-                                                .unwrap();
-                                        }
-                                    },
-                                }
-                                if op.panel == Panel::Todo {
-                                    cur_todo = op.cur;
-                                } else {
-                                    cur_done = op.cur;
-                                }
-                                panel = op.panel;
-                                message.push_str(&format!("Undo: {}", op.action));
-                            }
-                            None => message.push_str("Nothing to undo."),
-                        }
-                    }
-                    Key::Char('\t') => {
-                        panel = panel.togle();
-                    }
+                    Key::Up | Key::Char('k') => list.go_up(),
+                    Key::Down | Key::Char('j') => list.go_down(),
+                    Key::Char('g') => list.go_top(),
+                    Key::Char('G') => list.go_bottom(),
+                    Key::Char('K') => list.drag_up(),
+                    Key::Char('J') => list.drag_down(),
+                    Key::Char('\n') => list.move_item(),
+                    Key::Char('d') => list.delete_item(),
+                    Key::Char('i') => editing = list.insert_item(),
+                    Key::Char('r') => editing = list.edit_item(),
+                    Key::Char('u') => list.undo(),
+                    Key::Char('\t') => list.toggle_panel(),
                     Key::Char('q') | Key::Ctrl('c') => quit = true,
                     _ => {}
                 }
             } else {
                 match key {
-                    Key::Char('\n') | Key::Esc => {
-                        match panel {
-                            Panel::Todo => {
-                                if todos[cur_todo].text.is_empty() {
-                                    list_delete(&mut todos, &mut cur_todo).unwrap();
-                                }
-                            }
-                            Panel::Done => {
-                                if dones[cur_done].text.is_empty() {
-                                    list_delete(&mut dones, &mut cur_done).unwrap();
-                                }
-                            }
-                        }
-
-                        editing = false;
-                        editing_cursor = 0;
-                        message.clear();
-                    }
-                    _ => match panel {
-                        Panel::Todo => {
-                            list_edit(&mut todos[cur_todo], &mut editing_cursor, Some(key));
-                        }
-                        Panel::Done => {
-                            list_edit(&mut dones[cur_done], &mut editing_cursor, Some(key));
-                        }
-                    },
+                    Key::Char('\n') | Key::Esc => editing = list.finish_edit(),
+                    _ => list.edit_item_with(Some(key)),
                 }
             }
         }
     }
 
     ui.clear();
-    list_dump(&file_path, &todos, &dones).unwrap();
-    print!(
+    list.save(&file_path);
+
+    println!(
         "[INFO]: Goodbye, stranger! Your todo list is saved to '{}'.",
         file_path
     );
