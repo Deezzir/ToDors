@@ -18,7 +18,6 @@ use termion::{color, terminal_size};
 use mods::todo::*;
 use mods::ui::*;
 
-const MAX_STACK_SIZE: usize = 20;
 const HIGHLIGHT_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::White);
 
 fn main() {
@@ -47,8 +46,11 @@ fn main() {
 
     let mut quit: bool = false;
     let mut editing: bool = false;
-    let mut list: List = List::new(&file_path);
+    let mut editing_cursor: usize = 0;
+    let mut app: TodoApp = TodoApp::new();
     let mut ui = UI::new();
+
+    app.parse(&file_path);
 
     // Main loop
     while !quit {
@@ -60,7 +62,7 @@ fn main() {
             {
                 ui.begin_layout(LayoutKind::Vert);
                 {
-                    ui.label(&format!("[MESSAGE]: {}", list.get_message()));
+                    ui.label(&format!("[MESSAGE]: {}", app.get_message()));
                 }
                 ui.end_layout();
                 ui.begin_layout(LayoutKind::Vert);
@@ -78,32 +80,30 @@ fn main() {
 
             ui.begin_layout(LayoutKind::Horz);
             {
-                let panel = list.get_panel();
-                let editing_cursor = list.get_editing_cursor();
-                let cur_todo = list.get_cur_todo();
-                let cur_done = list.get_cur_done();
-
                 ui.begin_layout(LayoutKind::Vert);
                 {
-                    if panel == Panel::Todo {
+                    if app.is_in_todo_panel() {
                         ui.label_styled("[TODO]", HIGHLIGHT_PAIR);
                     } else {
                         ui.label(" TODO ");
                     }
                     ui.label("-".repeat(width as usize / 2).as_str());
-                    for (i, todo) in list.get_mut_todos().iter_mut().enumerate() {
-                        if i == cur_todo && panel == Panel::Todo {
+                    for todo in app.get_todos() {
+                        if app.is_cur_todo(todo) && app.is_in_todo_panel() {
                             if editing {
                                 ui.edit_label(
-                                    &todo.text,
+                                    todo.get_text(),
                                     editing_cursor,
                                     "- [ ] ".to_string(),
                                 );
                             } else {
-                                ui.label_styled(&format!("- [ ] {}", todo.text), HIGHLIGHT_PAIR);
+                                ui.label_styled(
+                                    &format!("- [ ] {}", todo.get_text()),
+                                    HIGHLIGHT_PAIR,
+                                );
                             }
                         } else {
-                            ui.label(&format!("- [ ] {}", todo.text));
+                            ui.label(&format!("- [ ] {}", todo.get_text()));
                         }
                     }
                 }
@@ -111,28 +111,28 @@ fn main() {
 
                 ui.begin_layout(LayoutKind::Vert);
                 {
-                    if panel == Panel::Done {
+                    if app.is_in_done_panel() {
                         ui.label_styled("[DONE]", HIGHLIGHT_PAIR);
                     } else {
                         ui.label(" DONE ");
                     }
                     ui.label("-".repeat(width as usize / 2).as_str());
-                    for (i, done) in list.get_mut_dones().iter_mut().enumerate() {
-                        if i == cur_done && panel == Panel::Done {
+                    for done in app.get_dones() {
+                        if app.is_cur_done(done) && app.is_in_done_panel() {
                             if editing {
                                 ui.edit_label(
-                                    &done.text,
+                                    done.get_text(),
                                     editing_cursor,
                                     "- [X] ".to_string(),
                                 );
                             } else {
                                 ui.label_styled(
-                                    &format!("- [X] ({}) {}", done.date, done.text),
+                                    &format!("- [X] ({}) {}", done.get_date(), done.get_text()),
                                     HIGHLIGHT_PAIR,
                                 );
                             }
                         } else {
-                            ui.label(&format!("- [X] ({}) {}", done.date, done.text));
+                            ui.label(&format!("- [X] ({}) {}", done.get_date(), done.get_text()));
                         }
                     }
                 }
@@ -144,37 +144,48 @@ fn main() {
 
         if let Ok(key) = rx.recv_timeout(timeout) {
             if !editing {
-                list.clear_message();
+                app.clear_message();
                 match key {
-                    Key::Up | Key::Char('k') => list.go_up(),
-                    Key::Down | Key::Char('j') => list.go_down(),
-                    Key::Char('g') => list.go_top(),
-                    Key::Char('G') => list.go_bottom(),
-                    Key::Char('K') => list.drag_up(),
-                    Key::Char('J') => list.drag_down(),
-                    Key::Char('\n') => list.move_item(),
-                    Key::Char('d') => list.delete_item(),
-                    Key::Char('i') => editing = list.insert_item(),
-                    Key::Char('r') => editing = list.edit_item(),
-                    Key::Char('u') => list.undo(),
-                    Key::Char('\t') => list.toggle_panel(),
+                    Key::Up | Key::Char('k') => app.go_up(),
+                    Key::Down | Key::Char('j') => app.go_down(),
+                    Key::Char('g') => app.go_top(),
+                    Key::Char('G') => app.go_bottom(),
+                    Key::Char('K') => app.drag_up(),
+                    Key::Char('J') => app.drag_down(),
+                    Key::Char('\n') => app.move_item(),
+                    Key::Char('d') => app.delete_item(),
+                    Key::Char('i') => {
+                        app.insert_item();
+                        editing_cursor = app.edit_item();
+                        editing = editing_cursor == 0;
+                    }
+                    Key::Char('r') => {
+                        editing_cursor = app.edit_item();
+                        editing = editing_cursor > 0;
+                    }
+                    Key::Char('u') => app.undo(),
+                    Key::Char('\t') => app.toggle_panel(),
                     Key::Char('q') | Key::Ctrl('c') => quit = true,
                     _ => {}
                 }
             } else {
                 match key {
-                    Key::Char('\n') | Key::Esc => editing = list.finish_edit(),
-                    _ => list.edit_item_with(Some(key)),
+                    Key::Char('\n') | Key::Esc => {
+                        app.finish_edit();
+                        editing = false;
+                        editing_cursor = 0;
+                    }
+                    _ => app.edit_item_with(&mut editing_cursor, Some(key)),
                 }
             }
         }
     }
 
     ui.clear();
-    list.save(&file_path);
+    app.save(&file_path).unwrap();
 
-    println!(
-        "[INFO]: Goodbye, stranger! Your todo list is saved to '{}'.",
+    print!(
+        "[INFO]: Goodbye, stranger! Your todo app is saved to '{}'.",
         file_path
     );
 }

@@ -1,6 +1,7 @@
 TODO(): Learn Rust
 TODO(): Make a Game of Life with Rust
-TODO(): Add autoresizing of the TODO app UI
+TODO(): Add safechecks for editing mode
+TODO(): Add autoresizing of the TODO app UI(tree?)
 TODO(): Finish a Rust TODO app
 DONE(23-01-16): Add editing option to TODO app
 DONE(23-01-16): Add inserting option to TODO app
