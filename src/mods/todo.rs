@@ -62,7 +62,7 @@ impl Operation {
         Self { action, cur, panel }
     }
 
-    fn new_with_act(action: Action) -> Self {
+    fn from(action: Action) -> Self {
         Self {
             action,
             cur: 0,
@@ -70,7 +70,7 @@ impl Operation {
         }
     }
 
-    fn is_act(&self, action: Action) -> bool {
+    fn has_action(&self, action: Action) -> bool {
         self.action == action
     }
 }
@@ -359,16 +359,13 @@ impl TodoApp {
     }
 
     pub fn toggle_panel(&mut self) {
-        if self.is_in_edit() {
-            panic!("Can't toggle panel while in edit mode.");
-        }
+        assert!(!self.is_in_edit(), "Can't toggle panel while in edit mode.");
         self.panel = self.panel.togle();
     }
 
     pub fn go_up(&mut self) {
-        if self.is_in_edit() {
-            panic!("Can't go up while in edit mode.");
-        }
+        assert!(!self.is_in_edit(), "Can't go up while in edit mode.");
+
         match self.panel {
             Panel::Todo => self.todos.up(),
             Panel::Done => self.dones.up(),
@@ -376,9 +373,7 @@ impl TodoApp {
     }
 
     pub fn go_down(&mut self) {
-        if self.is_in_edit() {
-            panic!("Can't go down while in edit mode.");
-        }
+        assert!(!self.is_in_edit(), "Can't go down while in edit mode.");
         match self.panel {
             Panel::Todo => self.todos.down(),
             Panel::Done => self.dones.down(),
@@ -386,9 +381,7 @@ impl TodoApp {
     }
 
     pub fn go_top(&mut self) {
-        if self.is_in_edit() {
-            panic!("Can't go top while in edit mode.");
-        }
+        assert!(!self.is_in_edit(), "Can't go top while in edit mode.");
         match self.panel {
             Panel::Todo => self.todos.first(),
             Panel::Done => self.dones.first(),
@@ -396,9 +389,7 @@ impl TodoApp {
     }
 
     pub fn go_bottom(&mut self) {
-        if self.is_in_edit() {
-            panic!("Can't go bottom while in edit mode.");
-        }
+        assert!(!self.is_in_edit(), "Can't go bottom while in edit mode.");
         match self.panel {
             Panel::Todo => self.todos.last(),
             Panel::Done => self.dones.last(),
@@ -406,9 +397,7 @@ impl TodoApp {
     }
 
     pub fn drag_up(&mut self) {
-        if self.is_in_edit() {
-            panic!("Can't drag up while in edit mode.");
-        }
+        assert!(!self.is_in_edit(), "Can't drag up while in edit mode.");
         match self.panel {
             Panel::Todo => {
                 self.todos.record_state();
@@ -442,9 +431,7 @@ impl TodoApp {
     }
 
     pub fn drag_down(&mut self) {
-        if self.is_in_edit() {
-            panic!("Can't drag while in edit mode.");
-        }
+        assert!(!self.is_in_edit(), "Can't drag while in edit mode.");
 
         match self.panel {
             Panel::Todo => {
@@ -479,9 +466,7 @@ impl TodoApp {
     }
 
     pub fn move_item(&mut self) {
-        if self.is_in_edit() {
-            panic!("Can't move item while in edit mode");
-        }
+        assert!(!self.is_in_edit(), "Can't move item while in edit mode");
 
         self.todos.record_state();
         self.dones.record_state();
@@ -518,9 +503,7 @@ impl TodoApp {
     }
 
     pub fn delete_item(&mut self) {
-        if self.is_in_edit() {
-            panic!("Can't delete while in edit mode");
-        }
+        assert!(!self.is_in_edit(), "Can't delete while in edit mode");
 
         match self.panel {
             Panel::Todo => self
@@ -547,9 +530,7 @@ impl TodoApp {
     }
 
     pub fn undo(&mut self) {
-        if self.is_in_edit() {
-            panic!("Can't undo while in edit mode");
-        }
+        assert!(!self.is_in_edit(), "Can't undo while in edit mode");
 
         let op = self.operation_stack.pop();
         match op {
@@ -580,9 +561,10 @@ impl TodoApp {
     }
 
     pub fn insert_item(&mut self) -> usize {
-        if self.is_in_edit() {
-            panic!("insert_item() called in already running edit mode.");
-        }
+        assert!(
+            !self.is_in_edit(),
+            "insert_item() called in already running edit mode."
+        );
 
         let mut editing_cursor = 1;
 
@@ -597,8 +579,7 @@ impl TodoApp {
                 self.todos.insert();
                 editing_cursor = 0;
 
-                self.operation_stack
-                    .push(Operation::new_with_act(Action::InEdit));
+                self.operation_stack.push(Operation::from(Action::InEdit));
                 self.message.push_str("What needs to be done?");
             }
             Panel::Done => self
@@ -606,13 +587,14 @@ impl TodoApp {
                 .push_str("Can't insert a new DONE item. Only new TODO allowed."),
         }
 
-        return editing_cursor;
+        editing_cursor
     }
 
     pub fn edit_item(&mut self) -> usize {
-        if self.is_in_edit() {
-            panic!("edit_item() called in already running edit mode.");
-        }
+        assert!(
+            !self.is_in_edit(),
+            "edit_item() called in already running edit mode."
+        );
 
         let mut editing_cursor = 0;
 
@@ -641,8 +623,7 @@ impl TodoApp {
                     ));
                 }
             };
-            self.operation_stack
-                .push(Operation::new_with_act(Action::InEdit));
+            self.operation_stack.push(Operation::from(Action::InEdit));
             self.message.push_str("Editing current item.");
         }
 
@@ -650,9 +631,10 @@ impl TodoApp {
     }
 
     pub fn edit_item_with(&mut self, cur: &mut usize, key: Option<Key>) {
-        if !self.is_in_edit() {
-            panic!("edit_item_with() called without a matching edit_item() or insert_item()");
-        }
+        assert!(
+            self.is_in_edit(),
+            "edit_item_with() called without a matching edit_item() or insert_item()"
+        );
 
         match self.panel {
             Panel::Todo => self.todos.edit(cur, key),
@@ -661,10 +643,11 @@ impl TodoApp {
     }
 
     pub fn finish_edit(&mut self) -> bool {
-        if !self.is_in_edit() {
-            panic!("finish_edit() called without a matching edit_item() or insert_item()");
-        }
-        
+        assert!(
+            self.is_in_edit(),
+            "finish_edit() called without a matching edit_item() or insert_item()"
+        );
+
         self.clear_message();
 
         match self.panel {
@@ -691,6 +674,6 @@ impl TodoApp {
             return false;
         }
 
-        last_op.unwrap().is_act(Action::InEdit)
+        last_op.unwrap().has_action(Action::InEdit)
     }
 }

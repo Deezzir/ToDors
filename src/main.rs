@@ -11,9 +11,9 @@ use std::time::Duration;
 
 use chrono::Local;
 
+use termion::color;
 use termion::event::Key;
 use termion::input::TermRead;
-use termion::{color, terminal_size};
 
 use mods::todo::*;
 use mods::ui::*;
@@ -25,6 +25,7 @@ fn main() {
     args.next().unwrap();
 
     // Get file path
+    // let file_path = "TODO";
     let file_path = match args.next() {
         Some(file_path) => file_path,
         None => {
@@ -54,9 +55,7 @@ fn main() {
 
     // Main loop
     while !quit {
-        let (width, _) = terminal_size().unwrap();
-
-        ui.begin(Point::new(0, 0), LayoutKind::Vert);
+        ui.begin(Vec2::new(0, 0), LayoutKind::Vert);
         {
             ui.begin_layout(LayoutKind::Horz);
             {
@@ -76,7 +75,7 @@ fn main() {
             }
             ui.end_layout();
 
-            ui.label("");
+            ui.br();
 
             ui.begin_layout(LayoutKind::Horz);
             {
@@ -87,7 +86,7 @@ fn main() {
                     } else {
                         ui.label(" TODO ");
                     }
-                    ui.label("-".repeat(width as usize / 2).as_str());
+                    ui.hl(Style::Dash);
                     for todo in app.get_todos() {
                         if app.is_cur_todo(todo) && app.is_in_todo_panel() {
                             if editing {
@@ -116,7 +115,7 @@ fn main() {
                     } else {
                         ui.label(" DONE ");
                     }
-                    ui.label("-".repeat(width as usize / 2).as_str());
+                    ui.hl(Style::Dash);
                     for done in app.get_dones() {
                         if app.is_cur_done(done) && app.is_in_done_panel() {
                             if editing {
