@@ -2,8 +2,8 @@ TODO(): Learn Rust
 TODO(): Finish a Game of Life with Rust with GUI(SDL?)
 TODO(): Add autoresizing of the TODO app UI(tree?)
 TODO(): Finish a Rust TODO app
-DONE(23-01-16): Add editing option to TODO app
-DONE(23-01-16): Add inserting option to TODO app
-DONE(23-01-18): Add undo option to TODO app
-DONE(23-01-17): Add date tracking to TODO app
-DONE(23-01-27): Add safechecks for editing mode
+DONE(2023-02-03 05:43:32.718001867 -05:00): Add editing option to TODO app
+DONE(2023-02-03 05:43:32.890226461 -05:00): Add inserting option to TODO app
+DONE(2023-02-03 05:43:33.055269071 -05:00): Add undo option to TODO app
+DONE(2023-02-03 05:43:33.752245741 -05:00): Add date tracking to TODO app
+DONE(2023-02-03 05:43:34.097168023 -05:00): Add safechecks for editing mode

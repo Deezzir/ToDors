@@ -10,7 +10,7 @@ pub fn term_goto<W: Write>(s: &mut W, pos: (u16, u16)) {
 }
 
 pub fn term_write<W: Write>(s: &mut W, text: &str) {
-    write!(s, "{}", text).unwrap();
+    write!(s, "{text}").unwrap();
 }
 
 pub fn term_style_reset<W: Write>(s: &mut W) {
@@ -19,7 +19,7 @@ pub fn term_style_reset<W: Write>(s: &mut W) {
 
 pub fn term_reset<W: Write>(s: &mut W) {
     term_goto(s, (0, 0));
-    write!(s, "{}{}", clear::All, style::Reset).unwrap();
+    write!(s, "{}{}", clear::AfterCursor, style::Reset).unwrap();
 }
 
 pub fn term_hide_cursor<W: Write>(s: &mut W) {

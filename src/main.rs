@@ -3,7 +3,11 @@ extern crate termion;
 mod mods;
 
 use std::env::args;
+use std::io::stderr;
 use std::io::stdin;
+use std::io::stdout;
+use std::io::StderrLock;
+use std::io::Write;
 use std::process::exit;
 use std::sync::mpsc;
 use std::thread;
@@ -14,47 +18,70 @@ use chrono::Local;
 use termion::color;
 use termion::event::Key;
 use termion::input::TermRead;
+use termion::raw::IntoRawMode;
 
 use mods::todo::*;
 use mods::ui::*;
 
-const HIGHLIGHT_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::White);
+const SELECTED_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::Cyan);
+const HIGHLIGHT_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::Green);
+
+const USAGE: &str = "Usage: todo [-f | --file <file>] [-h | --help]";
+
+const HELP: &str = r#"ToDors - A simple todo list manager in terminal.
+
+Author: Iurii Kondrakov <deezzir@gmail.com>
+
+    Options:
+        -f, --file <file>   The file to use for the todo list.
+        -h, --help          Show this help message.
+
+    Controls:
+        <k/up>, <j/down>  ~ Move the cursor up
+        <K>, <J>          ~ Drag item UP/DOWN
+        <g>, <G>          ~ Go to the top/bottom of the list
+        <d>               ~ Delete 'Done' element
+        <i>               ~ Insert a new 'Todo' element
+        <u>               ~ Undo last action
+        <r>               ~ Edit current item
+        <enter>           ~ Transfer current elemen/Save edited element
+        <esc>             ~ Cancel editing
+        <tab>             ~ Switch between Switch between 'Todos'/'Dones'
+        <q>, <ctrl-c>     ~ Quit
+"#;
+
+const FILE_PATH: &str = "TODO";
 
 fn main() {
-    let mut args = args();
-    args.next().unwrap();
+    let stdout = stdout();
+    let stdout = stdout.lock();
+    let stderr = stderr();
+    let stderr = stderr.lock();
+    let file_path: String = get_args(stderr);
 
-    // Get file path
-    // let file_path = "TODO";
-    let file_path = match args.next() {
-        Some(file_path) => file_path,
-        None => {
-            eprintln!("Usage: todo <file>");
-            eprintln!("[ERROR]: No file specified");
-            exit(1);
-        }
-    };
-
-    // Keyboard input thread that will poll for input and send it to the main thread
-    let timeout = Duration::from_millis(100);
+    let timeout = Duration::from_millis(16);
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
-        let mut keys = stdin().keys();
-        while let Some(Ok(key)) = keys.next() {
+        let stdin = stdin();
+        let stdin = stdin.lock();
+        let mut stdin = stdin.keys();
+
+        while let Some(Ok(key)) = stdin.next() {
             tx.send(key).unwrap();
         }
     });
 
-    let mut quit: bool = false;
     let mut editing: bool = false;
     let mut editing_cursor: usize = 0;
     let mut app: TodoApp = TodoApp::new();
-    let mut ui = UI::new();
+
+    let stdout_raw = stdout.into_raw_mode().unwrap();
+    let mut ui = UI::new(stdout_raw);
 
     app.parse(&file_path);
 
     // Main loop
-    while !quit {
+    loop {
         ui.begin(Vec2::new(0, 0), LayoutKind::Vert);
         {
             ui.begin_layout(LayoutKind::Horz);
@@ -86,7 +113,7 @@ fn main() {
                     } else {
                         ui.label(" TODO ");
                     }
-                    ui.hl(Style::Dash);
+                    ui.hl();
                     for todo in app.get_todos() {
                         if app.is_cur_todo(todo) && app.is_in_todo_panel() {
                             if editing {
@@ -98,7 +125,7 @@ fn main() {
                             } else {
                                 ui.label_styled(
                                     &format!("- [ ] {}", todo.get_text()),
-                                    HIGHLIGHT_PAIR,
+                                    SELECTED_PAIR,
                                 );
                             }
                         } else {
@@ -115,7 +142,7 @@ fn main() {
                     } else {
                         ui.label(" DONE ");
                     }
-                    ui.hl(Style::Dash);
+                    ui.hl();
                     for done in app.get_dones() {
                         if app.is_cur_done(done) && app.is_in_done_panel() {
                             if editing {
@@ -127,7 +154,7 @@ fn main() {
                             } else {
                                 ui.label_styled(
                                     &format!("- [X] ({}) {}", done.get_date(), done.get_text()),
-                                    HIGHLIGHT_PAIR,
+                                    SELECTED_PAIR,
                                 );
                             }
                         } else {
@@ -142,33 +169,35 @@ fn main() {
         ui.end();
 
         if let Ok(key) = rx.recv_timeout(timeout) {
+            use Key::*;
+
             if !editing {
                 app.clear_message();
                 match key {
-                    Key::Up | Key::Char('k') => app.go_up(),
-                    Key::Down | Key::Char('j') => app.go_down(),
-                    Key::Char('g') => app.go_top(),
-                    Key::Char('G') => app.go_bottom(),
-                    Key::Char('K') => app.drag_up(),
-                    Key::Char('J') => app.drag_down(),
-                    Key::Char('\n') => app.move_item(),
-                    Key::Char('d') => app.delete_item(),
-                    Key::Char('i') => {
+                    Up | Char('k') => app.go_up(),
+                    Down | Char('j') => app.go_down(),
+                    Char('g') => app.go_top(),
+                    Char('G') => app.go_bottom(),
+                    Char('K') => app.drag_up(),
+                    Char('J') => app.drag_down(),
+                    Char('\n') => app.move_item(),
+                    Char('d') => app.delete_item(),
+                    Char('i') => {
                         editing_cursor = app.insert_item();
                         editing = editing_cursor == 0;
                     }
-                    Key::Char('r') => {
+                    Char('r') => {
                         editing_cursor = app.edit_item();
                         editing = editing_cursor > 0;
                     }
-                    Key::Char('u') => app.undo(),
-                    Key::Char('\t') => app.toggle_panel(),
-                    Key::Char('q') | Key::Ctrl('c') => quit = true,
+                    Char('u') => app.undo(),
+                    Char('\t') => app.toggle_panel(),
+                    Char('q') | Key::Ctrl('c') => break,
                     _ => {}
                 }
             } else {
                 match key {
-                    Key::Char('\n') | Key::Esc => {
+                    Char('\n') | Esc => {
                         editing = app.finish_edit();
                         editing_cursor = if editing { editing_cursor } else { 0 };
                     }
@@ -178,11 +207,36 @@ fn main() {
         }
     }
 
-    ui.clear();
     app.save(&file_path).unwrap();
+}
 
-    print!(
-        "[INFO]: Goodbye, stranger! Your todo app is saved to '{}'.",
-        file_path
-    );
+fn get_args(mut stderr: StderrLock) -> String {
+    let mut args = args().skip(1);
+
+    match args.next() {
+        Some(arg) => match arg.as_str() {
+            "-f" | "--file" => args.next().unwrap_or_else(|| {
+                stderr
+                    .write_all(format!("[ERROR]: No file given for '{arg}'.\n").as_bytes())
+                    .unwrap();
+                stderr.write_all(USAGE.as_bytes()).unwrap();
+                stderr.flush().unwrap();
+                exit(1);
+            }),
+            "-h" | "--help" => {
+                stderr.write_all(format!("{HELP}\n{USAGE}\n").as_bytes()).unwrap();
+                stderr.flush().unwrap();
+                exit(0);
+            }
+            _ => {
+                stderr
+                    .write_all(format!("[ERROR]: Unknown argument: '{arg}'.\n").as_bytes())
+                    .unwrap();
+                stderr.write_all(USAGE.as_bytes()).unwrap();
+                stderr.flush().unwrap();
+                exit(1);
+            }
+        },
+        None => FILE_PATH.to_string(),
+    }
 }

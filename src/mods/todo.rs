@@ -3,7 +3,7 @@ use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead, Write};
 
-use chrono::Local;
+use chrono::{DateTime, Local};
 
 use regex::Regex;
 
@@ -78,11 +78,11 @@ impl Operation {
 #[derive(Clone, PartialEq)]
 pub struct Item {
     text: String,
-    date: String,
+    date: DateTime<Local>,
 }
 
 impl Item {
-    fn new(text: String, date: String) -> Self {
+    fn new(text: String, date: DateTime<Local>) -> Self {
         Self { text, date }
     }
 
@@ -90,8 +90,8 @@ impl Item {
         &self.text
     }
 
-    pub fn get_date(&self) -> &String {
-        &self.date
+    pub fn get_date(&self) -> String {
+        self.date.format("%y-%m-%d %H:%M").to_string()
     }
 }
 
@@ -178,7 +178,7 @@ impl List {
 
     fn insert(&mut self) {
         self.list
-            .insert(self.cur, Item::new(String::new(), String::new()));
+            .insert(self.cur, Item::new(String::new(), Local::now()));
     }
 
     fn delete(&mut self) -> Result<(), &'static str> {
@@ -197,7 +197,7 @@ impl List {
 
     fn transfer(&mut self, rhs: &mut Self) -> Result<(), &'static str> {
         if self.cur < self.list.len() {
-            self.list[self.cur].date = Local::now().format("%y-%m-%d").to_string();
+            self.list[self.cur].date = Local::now();
             rhs.list.push(self.list.remove(self.cur));
             if !self.list.is_empty() {
                 self.cur = min(self.cur, self.list.len() - 1);
@@ -215,18 +215,19 @@ impl List {
         *cur = min(*cur, item.text.len());
 
         if let Some(key) = key.take() {
+            use Key::*;
             match key {
-                Key::Left => {
+                Left => {
                     if *cur > 0 {
                         *cur -= 1;
                     }
                 }
-                Key::Right => {
+                Right => {
                     if *cur < item.text.len() {
                         *cur += 1;
                     }
                 }
-                Key::Backspace => {
+                Backspace => {
                     if *cur > 0 {
                         *cur -= 1;
                         if *cur < item.text.len() {
@@ -234,14 +235,14 @@ impl List {
                         }
                     }
                 }
-                Key::Delete => {
+                Delete => {
                     if *cur < item.text.len() {
                         item.text.remove(*cur);
                     }
                 }
-                Key::Home => *cur = 0,
-                Key::End => *cur = item.text.len(),
-                Key::Char(c) => {
+                Home => *cur = 0,
+                End => *cur = item.text.len(),
+                Char(c) => {
                     let c = c as u8;
                     if c.is_ascii() && (32..127).contains(&c) {
                         if *cur > item.text.len() {
@@ -316,7 +317,7 @@ impl TodoApp {
     pub fn parse(&mut self, file_path: &str) {
         let file = File::open(file_path);
         let re_todo = Regex::new(r"^TODO\(\): (.*)$").unwrap();
-        let re_done = Regex::new(r"^DONE\((\d{2}-\d{2}-\d{2})\): (.*)$").unwrap();
+        let re_done = Regex::new(r"^DONE\((.*)\): (.*)$").unwrap();
 
         match file {
             Ok(file) => {
@@ -324,24 +325,24 @@ impl TodoApp {
                     let line = line.unwrap();
                     if let Some(caps) = re_todo.captures(&line) {
                         self.todos
-                            .add_item(Item::new(caps[1].to_string(), String::new()));
+                            .add_item(Item::new(caps[1].to_string(), Local::now()));
                     } else if let Some(caps) = re_done.captures(&line) {
-                        self.dones
-                            .add_item(Item::new(caps[2].to_string(), caps[1].to_string()));
+                        self.dones.add_item(Item::new(
+                            caps[2].to_string(),
+                            caps[1].parse::<DateTime<Local>>().unwrap(),
+                        ));
                     } else {
                         panic!("[ERROR]: {}:{}: invalid format", file_path, id + 1);
                     }
                 }
-                self.message = format!("Loaded '{}' file.", file_path)
+                self.message = format!("Loaded '{file_path}' file.")
             }
             Err(err) => {
                 if err.kind() == io::ErrorKind::NotFound {
-                    self.message = format!("File '{}' not found. Creating new one.", file_path);
+                    self.message = format!("File '{file_path}' not found. Creating new one.");
                 } else {
-                    self.message = format!(
-                        "Error occureed while opening the file '{}': {:?}",
-                        file_path, err
-                    );
+                    self.message =
+                        format!("Error occureed while opening the file '{file_path}': {err:?}");
                 }
             }
         }
