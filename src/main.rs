@@ -24,12 +24,13 @@ use mods::todo::*;
 use mods::ui::*;
 
 const SELECTED_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::Cyan);
-const HIGHLIGHT_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::Green);
+const UNSELECTED_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::LightBlack);
+const HIGHLIGHT_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::LightGreen);
+const UI_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::White, &color::Black);
 
 const USAGE: &str = "Usage: todo [-f | --file <file>] [-h | --help]";
 
-const HELP: &str = r#"ToDors - A simple todo list manager in terminal.
-
+const HELP: &str = r#"ToDors - a simple todo list manager in terminal.
 Author: Iurii Kondrakov <deezzir@gmail.com>
 
     Options:
@@ -80,23 +81,21 @@ fn main() {
 
     app.parse(&file_path);
 
-    // Main loop
     loop {
+        let date = Local::now().format("%Y-%m-%d %H:%M:%S");
+
         ui.begin(Vec2::new(0, 0), LayoutKind::Vert);
         {
             ui.begin_layout(LayoutKind::Horz);
             {
                 ui.begin_layout(LayoutKind::Vert);
                 {
-                    ui.label(&format!("[MESSAGE]: {}", app.get_message()));
+                    ui.label_styled(&format!("[MESSAGE]: {}", app.get_message()), UI_PAIR);
                 }
                 ui.end_layout();
                 ui.begin_layout(LayoutKind::Vert);
                 {
-                    ui.label(&format!(
-                        "[DATE]: {}",
-                        Local::now().format("%Y-%m-%d %H:%M:%S")
-                    ));
+                    ui.label_styled(&format!("[DATE]: {}", date), UI_PAIR);
                 }
                 ui.end_layout();
             }
@@ -111,21 +110,28 @@ fn main() {
                     if app.is_in_todo_panel() {
                         ui.label_styled("[TODO]", HIGHLIGHT_PAIR);
                     } else {
-                        ui.label(" TODO ");
+                        ui.label_styled(" TODO ", UNSELECTED_PAIR);
                     }
                     ui.hl();
                     for todo in app.get_todos() {
-                        if app.is_cur_todo(todo) && app.is_in_todo_panel() {
-                            if editing {
-                                ui.edit_label(
-                                    todo.get_text(),
-                                    editing_cursor,
-                                    "- [ ] ".to_string(),
-                                );
+                        if app.is_cur_todo(todo) {
+                            if app.is_in_todo_panel() {
+                                if editing {
+                                    ui.edit_label(
+                                        todo.get_text(),
+                                        editing_cursor,
+                                        "- [ ] ".to_string(),
+                                    );
+                                } else {
+                                    ui.label_styled(
+                                        &format!("- [ ] {}", todo.get_text()),
+                                        SELECTED_PAIR,
+                                    );
+                                }
                             } else {
                                 ui.label_styled(
                                     &format!("- [ ] {}", todo.get_text()),
-                                    SELECTED_PAIR,
+                                    UNSELECTED_PAIR,
                                 );
                             }
                         } else {
@@ -140,21 +146,28 @@ fn main() {
                     if app.is_in_done_panel() {
                         ui.label_styled("[DONE]", HIGHLIGHT_PAIR);
                     } else {
-                        ui.label(" DONE ");
+                        ui.label_styled(" DONE ", UNSELECTED_PAIR);
                     }
                     ui.hl();
                     for done in app.get_dones() {
-                        if app.is_cur_done(done) && app.is_in_done_panel() {
-                            if editing {
-                                ui.edit_label(
-                                    done.get_text(),
-                                    editing_cursor,
-                                    "- [X] ".to_string(),
-                                );
+                        if app.is_cur_done(done) {
+                            if app.is_in_done_panel() {
+                                if editing {
+                                    ui.edit_label(
+                                        done.get_text(),
+                                        editing_cursor,
+                                        "- [X] ".to_string(),
+                                    );
+                                } else {
+                                    ui.label_styled(
+                                        &format!("- [X] ({}) {}", done.get_date(), done.get_text()),
+                                        SELECTED_PAIR,
+                                    );
+                                }
                             } else {
                                 ui.label_styled(
                                     &format!("- [X] ({}) {}", done.get_date(), done.get_text()),
-                                    SELECTED_PAIR,
+                                    UNSELECTED_PAIR,
                                 );
                             }
                         } else {
@@ -224,7 +237,9 @@ fn get_args(mut stderr: StderrLock) -> String {
                 exit(1);
             }),
             "-h" | "--help" => {
-                stderr.write_all(format!("{HELP}\n{USAGE}\n").as_bytes()).unwrap();
+                stderr
+                    .write_all(format!("{HELP}\n{USAGE}\n").as_bytes())
+                    .unwrap();
                 stderr.flush().unwrap();
                 exit(0);
             }

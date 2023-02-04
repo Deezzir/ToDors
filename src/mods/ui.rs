@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use termion::{clear, color, terminal_size};
 
-use crate::HIGHLIGHT_PAIR;
+const CURSOR_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::White);
 
 type LayoutRef = Rc<RefCell<Box<Layout>>>;
 
@@ -182,8 +182,6 @@ impl<W: Write> UI<W> {
     pub fn begin(&mut self, pos: Vec2, kind: LayoutKind) {
         assert!(self.stack.is_empty());
 
-        let pos = Vec2::new(pos.x + 1, pos.y);
-
         let (w, h) = terminal_size().unwrap_or((80, 24));
         let root = Box::new(Layout::new(kind, pos, Vec2::new(w, h)));
 
@@ -223,7 +221,7 @@ impl<W: Write> UI<W> {
             .last()
             .expect("Tried to render horizontal line outside of any layout");
 
-        let text = "─".repeat(layout.borrow().max_size.x as usize - 1);
+        let text = "‾".repeat(layout.borrow().max_size.x as usize);
 
         self.label(&text);
     }
@@ -238,13 +236,20 @@ impl<W: Write> UI<W> {
         term_goto(&mut self.stdout, (pos.y, pos.x));
         term_write(&mut self.stdout, text);
 
+        let space_fill = " ".repeat(if layout.borrow().max_size.x as usize > text.len() {
+            layout.borrow().max_size.x as usize - text.len()
+        } else {
+            0
+        });
+        term_write(&mut self.stdout, &space_fill);
+
         layout
             .borrow_mut()
             .add_widget(Vec2::new(text.len() as u16, 1));
     }
 
     pub fn label_styled(&mut self, text: &str, pair: (&dyn color::Color, &dyn color::Color)) {
-        term_set_style(&mut self.stdout, pair);
+        term_set_color(&mut self.stdout, pair.0, Some(pair.1));
         self.label(text);
         term_style_reset(&mut self.stdout);
     }
@@ -271,7 +276,7 @@ impl<W: Write> UI<W> {
                 &mut self.stdout,
                 (pos.y, pos.x + cur as u16 + prefix.len() as u16),
             );
-            term_set_style(&mut self.stdout, HIGHLIGHT_PAIR);
+            term_set_color(&mut self.stdout, CURSOR_PAIR.0, Some(CURSOR_PAIR.1));
             term_write(&mut self.stdout, text.get(cur..=cur).unwrap_or(" "));
             term_style_reset(&mut self.stdout);
         }

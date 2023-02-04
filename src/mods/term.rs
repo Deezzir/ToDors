@@ -1,8 +1,11 @@
 use std::io::Write;
 use termion::{clear, color, cursor, style};
 
-pub fn term_set_style<W: Write>(s: &mut W, pair: (&dyn color::Color, &dyn color::Color)) {
-    write!(s, "{}{}", color::Fg(pair.0), color::Bg(pair.1)).unwrap();
+pub fn term_set_color<W: Write>(s: &mut W, fg: &dyn color::Color, bg: Option<&dyn color::Color>) {
+    write!(s, "{}", color::Fg(fg)).unwrap();
+    if let Some(bg) = bg {
+        write!(s, "{}", color::Bg(bg)).unwrap();
+    }
 }
 
 pub fn term_goto<W: Write>(s: &mut W, pos: (u16, u16)) {
