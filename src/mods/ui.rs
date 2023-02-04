@@ -6,7 +6,7 @@ use std::io::Write;
 use std::ops::{Add, Div, Mul};
 use std::rc::Rc;
 
-use termion::{clear, color, terminal_size};
+use termion::{color, terminal_size};
 
 const CURSOR_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::White);
 
@@ -158,37 +158,43 @@ impl Layout {
 pub struct UI<W: Write> {
     stdout: W,
     stack: Vec<LayoutRef>,
+    buffer: String
 }
 
 impl<W: Write> Drop for UI<W> {
     fn drop(&mut self) {
-        term_show_cursor(&mut self.stdout);
-        term_reset(&mut self.stdout);
+        let mut b = String::new();
+        b.push_str(&term_show_cursor_str());
+        b.push_str(&term_reset_str());
+        term_write(&mut self.stdout, &b);
         self.stdout.flush().unwrap();
     }
 }
 
 impl<W: Write> UI<W> {
     pub fn new(mut stdout: W) -> Self {
-        term_reset(&mut stdout);
-        term_hide_cursor(&mut stdout);
         stdout.flush().unwrap();
+        let mut b = String::new();
+        b.push_str(&term_reset_str());
+        b.push_str(&term_hide_cursor_str());
         Self {
             stdout,
             stack: Vec::new(),
+            buffer: b,
         }
     }
 
     pub fn begin(&mut self, pos: Vec2, kind: LayoutKind) {
         assert!(self.stack.is_empty());
+        self.stdout.flush().unwrap();
 
         let (w, h) = terminal_size().unwrap_or((80, 24));
         let root = Box::new(Layout::new(kind, pos, Vec2::new(w, h)));
 
         self.stack.push(Rc::new(RefCell::new(root)));
 
-        term_goto(&mut self.stdout, (pos.y, pos.x));
-        term_write(&mut self.stdout, &format!("{}", clear::AfterCursor));
+        self.buffer.push_str(&term_goto_str((pos.y, pos.x)));
+        self.buffer.push_str(&term_clear_afer_cursor_str());
     }
 
     pub fn begin_layout(&mut self, kind: LayoutKind) {
@@ -233,15 +239,15 @@ impl<W: Write> UI<W> {
             .expect("Tried to render label outside of any layout");
         let pos = layout.borrow().available_pos();
 
-        term_goto(&mut self.stdout, (pos.y, pos.x));
-        term_write(&mut self.stdout, text);
+        self.buffer.push_str(&term_goto_str((pos.y, pos.x)));
+        self.buffer.push_str(text);
 
         let space_fill = " ".repeat(if layout.borrow().max_size.x as usize > text.len() {
             layout.borrow().max_size.x as usize - text.len()
         } else {
             0
         });
-        term_write(&mut self.stdout, &space_fill);
+        self.buffer.push_str(&space_fill);
 
         layout
             .borrow_mut()
@@ -249,9 +255,9 @@ impl<W: Write> UI<W> {
     }
 
     pub fn label_styled(&mut self, text: &str, pair: (&dyn color::Color, &dyn color::Color)) {
-        term_set_color(&mut self.stdout, pair.0, Some(pair.1));
+        self.buffer.push_str(&term_set_color_str( pair.0, Some(pair.1)));
         self.label(text);
-        term_style_reset(&mut self.stdout);
+        self.buffer.push_str(&term_style_reset_str());
     }
 
     pub fn edit_label(&mut self, text: &String, cur: usize, prefix: String) {
@@ -263,8 +269,8 @@ impl<W: Write> UI<W> {
 
         // Buffer
         {
-            term_goto(&mut self.stdout, (pos.y, pos.x));
-            term_write(&mut self.stdout, &format!("{prefix}{text}"));
+            self.buffer.push_str(&term_goto_str((pos.y, pos.x)));
+            self.buffer.push_str(&format!("{prefix}{text}"));
             layout
                 .borrow_mut()
                 .add_widget(Vec2::new(text.len() as u16, 1));
@@ -272,13 +278,13 @@ impl<W: Write> UI<W> {
 
         // Cursor
         {
-            term_goto(
-                &mut self.stdout,
-                (pos.y, pos.x + cur as u16 + prefix.len() as u16),
-            );
-            term_set_color(&mut self.stdout, CURSOR_PAIR.0, Some(CURSOR_PAIR.1));
-            term_write(&mut self.stdout, text.get(cur..=cur).unwrap_or(" "));
-            term_style_reset(&mut self.stdout);
+            self.buffer.push_str(&term_goto_str((
+                pos.y,
+                pos.x + cur as u16 + prefix.len() as u16,
+            )));
+            self.buffer.push_str(&term_set_color_str(CURSOR_PAIR.0, Some(CURSOR_PAIR.1)));
+            self.buffer.push_str(&text.get(cur..=cur).unwrap_or(" "));
+            self.buffer.push_str(&term_style_reset_str());
         }
     }
 
@@ -298,6 +304,9 @@ impl<W: Write> UI<W> {
         self.stack
             .pop()
             .expect("Can't end a non-existing UI. Was there UI::begin()?");
+         
+        term_write(&mut self.stdout, &self.buffer);
         self.stdout.flush().unwrap();
+        self.buffer.clear();
     }
 }

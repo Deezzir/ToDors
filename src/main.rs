@@ -60,7 +60,7 @@ fn main() {
     let stderr = stderr.lock();
     let file_path: String = get_args(stderr);
 
-    let timeout = Duration::from_millis(16);
+    let timeout = Duration::from_millis(100);
     let (tx, rx) = mpsc::channel();
     thread::spawn(move || {
         let stdin = stdin();
