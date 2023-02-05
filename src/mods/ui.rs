@@ -1,14 +1,9 @@
-use super::term::*;
-
 use std::cell::RefCell;
 use std::cmp::{max, min};
-use std::io::Write;
 use std::ops::{Add, Div, Mul};
 use std::rc::Rc;
 
-use termion::{color, terminal_size};
-
-const CURSOR_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::White);
+use ncurses::*;
 
 type LayoutRef = Rc<RefCell<Box<Layout>>>;
 
@@ -27,12 +22,12 @@ pub enum Side {
 
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Vec2 {
-    x: u16,
-    y: u16,
+    x: i32,
+    y: i32,
 }
 
 impl Vec2 {
-    pub fn new(x: u16, y: u16) -> Self {
+    pub fn new(x: i32, y: i32) -> Self {
         Self { x, y }
     }
 
@@ -115,7 +110,7 @@ impl Layout {
     }
 
     fn available_size(&self) -> (Vec2, Vec2) {
-        let div = self.children.len() as u16 + 1;
+        let div = self.children.len() as i32 + 1;
         match self.kind {
             LayoutKind::Horz => self.max_size.div_rem(Vec2::new(div, 1)),
             LayoutKind::Vert => self.max_size.div_rem(Vec2::new(1, div)),
@@ -155,46 +150,20 @@ impl Layout {
     }
 }
 
-pub struct UI<W: Write> {
-    stdout: W,
+pub struct UI {
     stack: Vec<LayoutRef>,
-    buffer: String
 }
 
-impl<W: Write> Drop for UI<W> {
-    fn drop(&mut self) {
-        let mut b = String::new();
-        b.push_str(&term_show_cursor_str());
-        b.push_str(&term_reset_str());
-        term_write(&mut self.stdout, &b);
-        self.stdout.flush().unwrap();
-    }
-}
-
-impl<W: Write> UI<W> {
-    pub fn new(mut stdout: W) -> Self {
-        stdout.flush().unwrap();
-        let mut b = String::new();
-        b.push_str(&term_reset_str());
-        b.push_str(&term_hide_cursor_str());
-        Self {
-            stdout,
-            stack: Vec::new(),
-            buffer: b,
-        }
+impl UI {
+    pub fn new() -> Self {
+        Self { stack: Vec::new() }
     }
 
-    pub fn begin(&mut self, pos: Vec2, kind: LayoutKind) {
+    pub fn begin(&mut self, pos: Vec2, kind: LayoutKind, max_size: Vec2) {
         assert!(self.stack.is_empty());
-        self.stdout.flush().unwrap();
 
-        let (w, h) = terminal_size().unwrap_or((80, 24));
-        let root = Box::new(Layout::new(kind, pos, Vec2::new(w, h)));
-
+        let root = Box::new(Layout::new(kind, pos, max_size));
         self.stack.push(Rc::new(RefCell::new(root)));
-
-        self.buffer.push_str(&term_goto_str((pos.y, pos.x)));
-        self.buffer.push_str(&term_clear_afer_cursor_str());
     }
 
     pub fn begin_layout(&mut self, kind: LayoutKind) {
@@ -228,7 +197,6 @@ impl<W: Write> UI<W> {
             .expect("Tried to render horizontal line outside of any layout");
 
         let text = "‾".repeat(layout.borrow().max_size.x as usize);
-
         self.label(&text);
     }
 
@@ -238,26 +206,21 @@ impl<W: Write> UI<W> {
             .last()
             .expect("Tried to render label outside of any layout");
         let pos = layout.borrow().available_pos();
+        let space_fill =
+            " ".repeat((layout.borrow().max_size.x as usize).saturating_sub(text.len()));
 
-        self.buffer.push_str(&term_goto_str((pos.y, pos.x)));
-        self.buffer.push_str(text);
-
-        let space_fill = " ".repeat(if layout.borrow().max_size.x as usize > text.len() {
-            layout.borrow().max_size.x as usize - text.len()
-        } else {
-            0
-        });
-        self.buffer.push_str(&space_fill);
+        mv(pos.y, pos.x);
+        addstr(&format!("{text}{space_fill}"));
 
         layout
             .borrow_mut()
-            .add_widget(Vec2::new(text.len() as u16, 1));
+            .add_widget(Vec2::new(text.len() as i32, 1));
     }
 
-    pub fn label_styled(&mut self, text: &str, pair: (&dyn color::Color, &dyn color::Color)) {
-        self.buffer.push_str(&term_set_color_str( pair.0, Some(pair.1)));
+    pub fn label_styled(&mut self, text: &str, pair: i16) {
+        attr_on(COLOR_PAIR(pair));
         self.label(text);
-        self.buffer.push_str(&term_style_reset_str());
+        attr_off(COLOR_PAIR(pair));
     }
 
     pub fn edit_label(&mut self, text: &String, cur: usize, prefix: String) {
@@ -269,22 +232,18 @@ impl<W: Write> UI<W> {
 
         // Buffer
         {
-            self.buffer.push_str(&term_goto_str((pos.y, pos.x)));
-            self.buffer.push_str(&format!("{prefix}{text}"));
+            mv(pos.y, pos.x);
+            addstr(&format!("{prefix}{text}"));
             layout
                 .borrow_mut()
-                .add_widget(Vec2::new(text.len() as u16, 1));
+                .add_widget(Vec2::new(text.len() as i32, 1));
         }
-
         // Cursor
         {
-            self.buffer.push_str(&term_goto_str((
-                pos.y,
-                pos.x + cur as u16 + prefix.len() as u16,
-            )));
-            self.buffer.push_str(&term_set_color_str(CURSOR_PAIR.0, Some(CURSOR_PAIR.1)));
-            self.buffer.push_str(&text.get(cur..=cur).unwrap_or(" "));
-            self.buffer.push_str(&term_style_reset_str());
+            mv(pos.y, pos.x + cur as i32 + prefix.len() as i32);
+            attr_on(A_REVERSE());
+            addstr(text.get(cur..=cur).unwrap_or(" "));
+            attr_off(A_REVERSE());
         }
     }
 
@@ -304,9 +263,5 @@ impl<W: Write> UI<W> {
         self.stack
             .pop()
             .expect("Can't end a non-existing UI. Was there UI::begin()?");
-         
-        term_write(&mut self.stdout, &self.buffer);
-        self.stdout.flush().unwrap();
-        self.buffer.clear();
     }
 }
