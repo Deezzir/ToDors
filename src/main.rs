@@ -16,7 +16,6 @@ const HIGHLIGHT_PAIR: i16 = 3;
 const UI_PAIR: i16 = 4;
 
 const USAGE: &str = "Usage: todo [-f | --file <file>] [-h | --help]";
-
 const HELP: &str = r#"ToDors - a simple todo list manager in terminal.
 Author: Iurii Kondrakov <deezzir@gmail.com>
 
@@ -43,25 +42,16 @@ const FILE_PATH: &str = "TODO";
 fn main() {
     let file_path: String = get_args();
 
-    initscr();
-    raw();
-    noecho();
-    keypad(stdscr(), true);
-    timeout(16);
-    curs_set(CURSOR_VISIBILITY::CURSOR_INVISIBLE);
-    use_default_colors();
-    init_colors();
-
+    ncurses_init();
     let mut editing: bool = false;
     let mut editing_cursor: usize = 0;
     let mut app: TodoApp = TodoApp::new();
     let mut ui = UI::new();
 
     app.parse(&file_path);
-
     loop {
         erase();
-        let date = Local::now().format("%Y-%m-%d %H:%M:%S");
+        let date = Local::now().format("%Y %a %b %d %H:%M:%S");
         let mut w = 0;
         let mut h = 0;
         getmaxyx(stdscr(), &mut h, &mut w);
@@ -72,17 +62,28 @@ fn main() {
             {
                 ui.begin_layout(LayoutKind::Vert);
                 {
+                    ui.label_styled(
+                        &format!(
+                            "[CONTENT]: ({})todos and ({})dones",
+                            app.get_todos_n(),
+                            app.get_dones_n()
+                        ),
+                        UI_PAIR,
+                    );
                     ui.label_styled(&format!("[MESSAGE]: {}", app.get_message()), UI_PAIR);
                 }
                 ui.end_layout();
+                
                 ui.begin_layout(LayoutKind::Vert);
                 {
-                    ui.label_styled(&format!("[DATE]: {}", date), UI_PAIR);
+                    ui.label_styled(&format!("[DATE]: {date}"), UI_PAIR);
+                    ui.label_styled(&format!("[FILE]: {file_path}"), UI_PAIR);
                 }
                 ui.end_layout();
             }
             ui.end_layout();
 
+            ui.hl();
             ui.br();
 
             ui.begin_layout(LayoutKind::Horz);
@@ -168,9 +169,9 @@ fn main() {
         if key != ERR {
             if !editing {
                 app.clear_message();
-                match key as u8 as char {
-                    'k' => app.go_up(),
-                    'j' => app.go_down(),
+                match char::from_u32(key as u32).unwrap() {
+                    'k' | '\u{103}' => app.go_up(),
+                    'j' | '\u{102}' => app.go_down(),
                     'g' => app.go_top(),
                     'G' => app.go_bottom(),
                     'K' => app.drag_up(),
@@ -187,12 +188,12 @@ fn main() {
                     }
                     'u' => app.undo(),
                     '\t' => app.toggle_panel(),
-                    'q' => break,
+                    'q' | '\u{3}' => break,
                     _ => {}
                 }
             } else {
                 match key as u8 as char {
-                    '\n' => {
+                    '\n' | '\u{1b}' => {
                         editing = app.finish_edit();
                         editing_cursor = if editing { editing_cursor } else { 0 };
                     }
@@ -206,7 +207,20 @@ fn main() {
     app.save(&file_path).unwrap();
 }
 
-fn init_colors() {
+fn ncurses_init() {
+    setlocale(LcCategory::all, "");
+    // Init ncurses
+    initscr();
+    raw();
+    // Allow for extended keyboard (like F1).
+    noecho();
+    keypad(stdscr(), true);
+    curs_set(CURSOR_VISIBILITY::CURSOR_INVISIBLE);
+    // Set timeout and esc delay
+    timeout(16);
+    set_escdelay(0);
+    // Set colors
+    use_default_colors();
     start_color();
     init_pair(HIGHLIGHT_PAIR, COLOR_BLACK, COLOR_GREEN);
     init_pair(SELECTED_PAIR, COLOR_BLACK, COLOR_CYAN);
@@ -225,7 +239,7 @@ fn get_args() -> String {
                 exit(1);
             }),
             "-h" | "--help" => {
-                eprintln!("{HELP}\n{USAGE}");
+                println!("{HELP}\n{USAGE}");
                 exit(0);
             }
             _ => {

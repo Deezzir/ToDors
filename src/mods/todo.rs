@@ -231,7 +231,8 @@ impl List {
                     *cur += 1;
                 }
             }
-            constants::KEY_BACKSPACE => {
+            constants::KEY_BACKSPACE | 127 => {
+                // 127 is backspace
                 if *cur > 0 {
                     *cur -= 1;
                     if *cur < item.text.len() {
@@ -244,8 +245,8 @@ impl List {
                     item.text.remove(*cur);
                 }
             }
-            constants::KEY_HOME => *cur = 0,
-            constants::KEY_END => *cur = item.text.len(),
+            constants::KEY_HOME | 1 => *cur = 0, // 1 is ctrl + a
+            constants::KEY_END | 5 => *cur = item.text.len(), // 5 is ctrl + e
             _ => {}
         }
     }
@@ -298,8 +299,16 @@ impl TodoApp {
         &self.todos.list
     }
 
+    pub fn get_todos_n(&self) -> usize {
+        self.todos.list.len()
+    }
+
     pub fn get_dones(&self) -> &Vec<Item> {
         &self.dones.list
+    }
+
+    pub fn get_dones_n(&self) -> usize {
+        self.dones.list.len()
     }
 
     pub fn clear_message(&mut self) {

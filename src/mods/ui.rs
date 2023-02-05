@@ -196,7 +196,7 @@ impl UI {
             .last()
             .expect("Tried to render horizontal line outside of any layout");
 
-        let text = "-".repeat(layout.borrow().max_size.x as usize);
+        let text = "‾".repeat(layout.borrow().max_size.x as usize);
         self.label(&text);
     }
 
@@ -210,7 +210,7 @@ impl UI {
             " ".repeat((layout.borrow().max_size.x as usize).saturating_sub(text.len()));
 
         mv(pos.y, pos.x);
-        addstr(&format!("{}{}", text, space_fill));
+        addstr(&format!("{text}{space_fill}"));
 
         layout
             .borrow_mut()
@@ -242,7 +242,7 @@ impl UI {
         {
             mv(pos.y, pos.x + cur as i32 + prefix.len() as i32);
             attr_on(A_REVERSE());
-            addstr(&text.get(cur..=cur).unwrap_or(" "));
+            addstr(text.get(cur..=cur).unwrap_or(" "));
             attr_off(A_REVERSE());
         }
     }
