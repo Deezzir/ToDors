@@ -5,10 +5,8 @@ use std::io::{self, BufRead, Write};
 
 use chrono::{DateTime, Local};
 
+use ncurses::constants;
 use regex::Regex;
-
-use termion::event::Key;
-
 // const MAX_STACK_SIZE: usize = 20;
 
 #[derive(PartialEq, Clone, Copy)]
@@ -210,51 +208,45 @@ impl List {
         }
     }
 
-    fn edit(&mut self, cur: &mut usize, mut key: Option<Key>) {
+    fn edit(&mut self, cur: &mut usize, key: i32) {
         let item = &mut self.list[self.cur];
         *cur = min(*cur, item.text.len());
 
-        if let Some(key) = key.take() {
-            use Key::*;
-            match key {
-                Left => {
-                    if *cur > 0 {
-                        *cur -= 1;
-                    }
+        match key {
+            32..=126 => {
+                if *cur > item.text.len() {
+                    item.text.push(key as u8 as char);
+                } else {
+                    item.text.insert(*cur, key as u8 as char);
                 }
-                Right => {
-                    if *cur < item.text.len() {
-                        *cur += 1;
-                    }
+                *cur += 1;
+            }
+            constants::KEY_LEFT => {
+                if *cur > 0 {
+                    *cur -= 1;
                 }
-                Backspace => {
-                    if *cur > 0 {
-                        *cur -= 1;
-                        if *cur < item.text.len() {
-                            item.text.remove(*cur);
-                        }
-                    }
+            }
+            constants::KEY_RIGHT => {
+                if *cur < item.text.len() {
+                    *cur += 1;
                 }
-                Delete => {
+            }
+            constants::KEY_BACKSPACE => {
+                if *cur > 0 {
+                    *cur -= 1;
                     if *cur < item.text.len() {
                         item.text.remove(*cur);
                     }
                 }
-                Home => *cur = 0,
-                End => *cur = item.text.len(),
-                Char(c) => {
-                    let c = c as u8;
-                    if c.is_ascii() && (32..127).contains(&c) {
-                        if *cur > item.text.len() {
-                            item.text.push(c as char);
-                        } else {
-                            item.text.insert(*cur, c as char);
-                        }
-                        *cur += 1;
-                    }
-                }
-                _ => {}
             }
+            constants::KEY_DC => {
+                if *cur < item.text.len() {
+                    item.text.remove(*cur);
+                }
+            }
+            constants::KEY_HOME => *cur = 0,
+            constants::KEY_END => *cur = item.text.len(),
+            _ => {}
         }
     }
 }
@@ -631,7 +623,7 @@ impl TodoApp {
         editing_cursor
     }
 
-    pub fn edit_item_with(&mut self, cur: &mut usize, key: Option<Key>) {
+    pub fn edit_item_with(&mut self, cur: &mut usize, key: i32) {
         assert!(
             self.is_in_edit(),
             "edit_item_with() called without a matching edit_item() or insert_item()"

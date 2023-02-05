@@ -1,32 +1,19 @@
 extern crate regex;
-extern crate termion;
 mod mods;
 
-use std::env::args;
-use std::io::stderr;
-use std::io::stdin;
-use std::io::stdout;
-use std::io::StderrLock;
-use std::io::Write;
-use std::process::exit;
-use std::sync::mpsc;
-use std::thread;
-use std::time::Duration;
-
 use chrono::Local;
+use std::env::args;
+use std::process::exit;
 
-use termion::color;
-use termion::event::Key;
-use termion::input::TermRead;
-use termion::raw::IntoRawMode;
+use ncurses::*;
 
 use mods::todo::*;
 use mods::ui::*;
 
-const SELECTED_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::Cyan);
-const UNSELECTED_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::LightBlack);
-const HIGHLIGHT_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::Black, &color::LightGreen);
-const UI_PAIR: (&dyn color::Color, &dyn color::Color) = (&color::White, &color::Black);
+const SELECTED_PAIR: i16 = 1;
+const UNSELECTED_PAIR: i16 = 2;
+const HIGHLIGHT_PAIR: i16 = 3;
+const UI_PAIR: i16 = 4;
 
 const USAGE: &str = "Usage: todo [-f | --file <file>] [-h | --help]";
 
@@ -54,37 +41,32 @@ Author: Iurii Kondrakov <deezzir@gmail.com>
 const FILE_PATH: &str = "TODO";
 
 fn main() {
-    let stdout = stdout();
-    let stdout = stdout.lock();
-    let stderr = stderr();
-    let stderr = stderr.lock();
-    let file_path: String = get_args(stderr);
+    let file_path: String = get_args();
 
-    let timeout = Duration::from_millis(100);
-    let (tx, rx) = mpsc::channel();
-    thread::spawn(move || {
-        let stdin = stdin();
-        let stdin = stdin.lock();
-        let mut stdin = stdin.keys();
-
-        while let Some(Ok(key)) = stdin.next() {
-            tx.send(key).unwrap();
-        }
-    });
+    initscr();
+    raw();
+    noecho();
+    keypad(stdscr(), true);
+    timeout(16);
+    curs_set(CURSOR_VISIBILITY::CURSOR_INVISIBLE);
+    use_default_colors();
+    init_colors();
 
     let mut editing: bool = false;
     let mut editing_cursor: usize = 0;
     let mut app: TodoApp = TodoApp::new();
-
-    let stdout_raw = stdout.into_raw_mode().unwrap();
-    let mut ui = UI::new(stdout_raw);
+    let mut ui = UI::new();
 
     app.parse(&file_path);
 
     loop {
+        erase();
         let date = Local::now().format("%Y-%m-%d %H:%M:%S");
+        let mut w = 0;
+        let mut h = 0;
+        getmaxyx(stdscr(), &mut h, &mut w);
 
-        ui.begin(Vec2::new(0, 0), LayoutKind::Vert);
+        ui.begin(Vec2::new(0, 0), LayoutKind::Vert, Vec2::new(w, h));
         {
             ui.begin_layout(LayoutKind::Horz);
             {
@@ -181,74 +163,74 @@ fn main() {
         }
         ui.end();
 
-        if let Ok(key) = rx.recv_timeout(timeout) {
-            use Key::*;
-
+        refresh();
+        let key = getch();
+        if key != ERR {
             if !editing {
                 app.clear_message();
-                match key {
-                    Up | Char('k') => app.go_up(),
-                    Down | Char('j') => app.go_down(),
-                    Char('g') => app.go_top(),
-                    Char('G') => app.go_bottom(),
-                    Char('K') => app.drag_up(),
-                    Char('J') => app.drag_down(),
-                    Char('\n') => app.move_item(),
-                    Char('d') => app.delete_item(),
-                    Char('i') => {
+                match key as u8 as char {
+                    'k' => app.go_up(),
+                    'j' => app.go_down(),
+                    'g' => app.go_top(),
+                    'G' => app.go_bottom(),
+                    'K' => app.drag_up(),
+                    'J' => app.drag_down(),
+                    '\n' => app.move_item(),
+                    'd' => app.delete_item(),
+                    'i' => {
                         editing_cursor = app.insert_item();
                         editing = editing_cursor == 0;
                     }
-                    Char('r') => {
+                    'r' => {
                         editing_cursor = app.edit_item();
                         editing = editing_cursor > 0;
                     }
-                    Char('u') => app.undo(),
-                    Char('\t') => app.toggle_panel(),
-                    Char('q') | Key::Ctrl('c') => break,
+                    'u' => app.undo(),
+                    '\t' => app.toggle_panel(),
+                    'q' => break,
                     _ => {}
                 }
             } else {
-                match key {
-                    Char('\n') | Esc => {
+                match key as u8 as char {
+                    '\n' => {
                         editing = app.finish_edit();
                         editing_cursor = if editing { editing_cursor } else { 0 };
                     }
-                    _ => app.edit_item_with(&mut editing_cursor, Some(key)),
+                    _ => app.edit_item_with(&mut editing_cursor, key),
                 }
             }
         }
     }
 
+    endwin();
     app.save(&file_path).unwrap();
 }
 
-fn get_args(mut stderr: StderrLock) -> String {
+fn init_colors() {
+    start_color();
+    init_pair(HIGHLIGHT_PAIR, COLOR_BLACK, COLOR_GREEN);
+    init_pair(SELECTED_PAIR, COLOR_BLACK, COLOR_CYAN);
+    init_pair(UNSELECTED_PAIR, COLOR_BLACK, COLOR_WHITE);
+    init_pair(UI_PAIR, COLOR_WHITE, COLOR_BLACK);
+}
+
+fn get_args() -> String {
     let mut args = args().skip(1);
 
     match args.next() {
         Some(arg) => match arg.as_str() {
             "-f" | "--file" => args.next().unwrap_or_else(|| {
-                stderr
-                    .write_all(format!("[ERROR]: No file given for '{arg}'.\n").as_bytes())
-                    .unwrap();
-                stderr.write_all(USAGE.as_bytes()).unwrap();
-                stderr.flush().unwrap();
+                eprintln!("[ERROR]: No file given for '{arg}'.");
+                eprintln!("{USAGE}");
                 exit(1);
             }),
             "-h" | "--help" => {
-                stderr
-                    .write_all(format!("{HELP}\n{USAGE}\n").as_bytes())
-                    .unwrap();
-                stderr.flush().unwrap();
+                eprintln!("{HELP}\n{USAGE}");
                 exit(0);
             }
             _ => {
-                stderr
-                    .write_all(format!("[ERROR]: Unknown argument: '{arg}'.\n").as_bytes())
-                    .unwrap();
-                stderr.write_all(USAGE.as_bytes()).unwrap();
-                stderr.flush().unwrap();
+                eprintln!("[ERROR]: Unknown argument: '{arg}'.");
+                eprintln!("{USAGE}");
                 exit(1);
             }
         },
