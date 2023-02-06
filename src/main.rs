@@ -73,7 +73,7 @@ fn main() {
                     ui.label_styled(&format!("[MESSAGE]: {}", app.get_message()), UI_PAIR);
                 }
                 ui.end_layout();
-                
+
                 ui.begin_layout(LayoutKind::Vert);
                 {
                     ui.label_styled(&format!("[DATE]: {date}"), UI_PAIR);
@@ -149,12 +149,12 @@ fn main() {
                                 }
                             } else {
                                 ui.label_styled(
-                                    &format!("- [X] ({}) {}", done.get_date(), done.get_text()),
+                                    &format!("- [X]|{}| {}", done.get_date(), done.get_text()),
                                     UNSELECTED_PAIR,
                                 );
                             }
                         } else {
-                            ui.label(&format!("- [X] ({}) {}", done.get_date(), done.get_text()));
+                            ui.label(&format!("- [X]|{}| {}", done.get_date(), done.get_text()));
                         }
                     }
                 }
@@ -176,7 +176,7 @@ fn main() {
                     'G' => app.go_bottom(),
                     'K' => app.drag_up(),
                     'J' => app.drag_down(),
-                    '\n' => app.move_item(),
+                    '\n' => app.transfer_item(),
                     'd' => app.delete_item(),
                     'i' => {
                         editing_cursor = app.insert_item();

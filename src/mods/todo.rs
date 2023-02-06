@@ -51,25 +51,12 @@ impl fmt::Display for Action {
 
 struct Operation {
     action: Action,
-    cur: usize,
     panel: Panel,
 }
 
 impl Operation {
-    fn new(action: Action, cur: usize, panel: Panel) -> Self {
-        Self { action, cur, panel }
-    }
-
-    fn from(action: Action) -> Self {
-        Self {
-            action,
-            cur: 0,
-            panel: Panel::Todo,
-        }
-    }
-
-    fn has_action(&self, action: Action) -> bool {
-        self.action == action
+    fn new(action: Action, panel: Panel) -> Self {
+        Self { action, panel }
     }
 }
 
@@ -89,12 +76,12 @@ impl Item {
     }
 
     pub fn get_date(&self) -> String {
-        self.date.format("%y-%m-%d %H:%M").to_string()
+        self.date.format("%y-%m-%d").to_string()
     }
 }
 
 struct List {
-    state_stack: Vec<Vec<Item>>,
+    state_stack: Vec<(Vec<Item>, usize)>,
     cur: usize,
     list: Vec<Item>,
 }
@@ -117,7 +104,7 @@ impl List {
     }
 
     fn record_state(&mut self) {
-        self.state_stack.push(self.list.to_owned());
+        self.state_stack.push((self.list.to_owned(), self.cur));
         // if self.state_stack.len() > MAX_STACK_SIZE {
         //     self.state_stack.truncate(MAX_STACK_SIZE);
         // }
@@ -125,7 +112,7 @@ impl List {
 
     fn revert_state(&mut self) -> Result<(), &'static str> {
         if !self.state_stack.is_empty() {
-            self.list = self.state_stack.pop().unwrap();
+            (self.list, self.cur) = self.state_stack.pop().unwrap();
             Ok(())
         } else {
             Err("Nothing to undo.")
@@ -404,11 +391,9 @@ impl TodoApp {
             Panel::Todo => {
                 self.todos.record_state();
                 match self.todos.drag_up() {
-                    Ok(()) => self.operation_stack.push(Operation::new(
-                        Action::DragUp,
-                        self.todos.cur + 1,
-                        Panel::Todo,
-                    )),
+                    Ok(()) => self
+                        .operation_stack
+                        .push(Operation::new(Action::DragUp, Panel::Todo)),
                     Err(err) => {
                         self.message.push_str(err);
                         self.todos.revert_state().unwrap();
@@ -418,11 +403,9 @@ impl TodoApp {
             Panel::Done => {
                 self.dones.record_state();
                 match self.dones.drag_up() {
-                    Ok(()) => self.operation_stack.push(Operation::new(
-                        Action::DragUp,
-                        self.dones.cur + 1,
-                        Panel::Done,
-                    )),
+                    Ok(()) => self
+                        .operation_stack
+                        .push(Operation::new(Action::DragUp, Panel::Done)),
                     Err(err) => {
                         self.message.push_str(err);
                         self.dones.revert_state().unwrap();
@@ -439,11 +422,9 @@ impl TodoApp {
             Panel::Todo => {
                 self.todos.record_state();
                 match self.todos.drag_down() {
-                    Ok(()) => self.operation_stack.push(Operation::new(
-                        Action::DragDown,
-                        self.todos.cur - 1,
-                        Panel::Todo,
-                    )),
+                    Ok(()) => self
+                        .operation_stack
+                        .push(Operation::new(Action::DragDown, Panel::Todo)),
                     Err(err) => {
                         self.message.push_str(err);
                         self.todos.revert_state().unwrap();
@@ -453,11 +434,9 @@ impl TodoApp {
             Panel::Done => {
                 self.dones.record_state();
                 match self.dones.drag_down() {
-                    Ok(()) => self.operation_stack.push(Operation::new(
-                        Action::DragDown,
-                        self.dones.cur - 1,
-                        Panel::Done,
-                    )),
+                    Ok(()) => self
+                        .operation_stack
+                        .push(Operation::new(Action::DragDown, Panel::Done)),
                     Err(err) => {
                         self.message.push_str(err);
                         self.dones.revert_state().unwrap();
@@ -467,7 +446,7 @@ impl TodoApp {
         }
     }
 
-    pub fn move_item(&mut self) {
+    pub fn transfer_item(&mut self) {
         assert!(!self.is_in_edit(), "Can't move item while in edit mode");
 
         self.todos.record_state();
@@ -480,19 +459,13 @@ impl TodoApp {
         match result {
             Ok(()) => match self.panel {
                 Panel::Todo => {
-                    self.operation_stack.push(Operation::new(
-                        Action::Transfer,
-                        self.todos.cur,
-                        Panel::Todo,
-                    ));
+                    self.operation_stack
+                        .push(Operation::new(Action::Transfer, Panel::Todo));
                     self.message.push_str("Done! Great job!");
                 }
                 Panel::Done => {
-                    self.operation_stack.push(Operation::new(
-                        Action::Transfer,
-                        self.dones.cur,
-                        Panel::Done,
-                    ));
+                    self.operation_stack
+                        .push(Operation::new(Action::Transfer, Panel::Done));
                     self.message.push_str("Not done yet? Keep going!")
                 }
             },
@@ -516,11 +489,8 @@ impl TodoApp {
                 match self.dones.delete() {
                     Ok(()) => {
                         self.message.push_str("DONE item deleted.");
-                        self.operation_stack.push(Operation::new(
-                            Action::Delete,
-                            self.dones.cur,
-                            Panel::Done,
-                        ));
+                        self.operation_stack
+                            .push(Operation::new(Action::Delete, Panel::Done));
                     }
                     Err(err) => {
                         self.message.push_str(err);
@@ -539,8 +509,8 @@ impl TodoApp {
             Some(op) => {
                 match op.action {
                     Action::Transfer => {
-                        self.todos.revert_state().unwrap();
                         self.dones.revert_state().unwrap();
+                        self.todos.revert_state().unwrap();
                     }
                     _ => match op.panel {
                         Panel::Todo => {
@@ -550,10 +520,6 @@ impl TodoApp {
                             self.dones.revert_state().unwrap();
                         }
                     },
-                }
-                match op.panel {
-                    Panel::Todo => self.todos.cur = op.cur,
-                    Panel::Done => self.dones.cur = op.cur,
                 }
                 self.panel = op.panel;
                 self.message.push_str(&format!("Undo: {}", op.action));
@@ -573,15 +539,13 @@ impl TodoApp {
         match self.panel {
             Panel::Todo => {
                 self.todos.record_state();
-                self.operation_stack.push(Operation::new(
-                    Action::Insert,
-                    self.todos.cur,
-                    Panel::Todo,
-                ));
+                self.operation_stack
+                    .push(Operation::new(Action::Insert, Panel::Todo));
                 self.todos.insert();
                 editing_cursor = 0;
 
-                self.operation_stack.push(Operation::from(Action::InEdit));
+                self.operation_stack
+                    .push(Operation::new(Action::InEdit, self.panel));
                 self.message.push_str("What needs to be done?");
             }
             Panel::Done => self
@@ -610,22 +574,17 @@ impl TodoApp {
             match self.panel {
                 Panel::Todo => {
                     self.todos.record_state();
-                    self.operation_stack.push(Operation::new(
-                        Action::Edit,
-                        self.todos.cur,
-                        Panel::Todo,
-                    ));
+                    self.operation_stack
+                        .push(Operation::new(Action::Edit, Panel::Todo));
                 }
                 Panel::Done => {
                     self.dones.record_state();
-                    self.operation_stack.push(Operation::new(
-                        Action::Edit,
-                        self.dones.cur,
-                        Panel::Done,
-                    ));
+                    self.operation_stack
+                        .push(Operation::new(Action::Edit, Panel::Done));
                 }
             };
-            self.operation_stack.push(Operation::from(Action::InEdit));
+            self.operation_stack
+                .push(Operation::new(Action::InEdit, self.panel));
             self.message.push_str("Editing current item.");
         }
 
@@ -676,6 +635,6 @@ impl TodoApp {
             return false;
         }
 
-        last_op.unwrap().has_action(Action::InEdit)
+        last_op.unwrap().action == Action::InEdit
     }
 }

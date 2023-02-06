@@ -1,5 +1,7 @@
-TODO(): Add buffered stdout write
+TODO(): Add subtodos
+TODO(): Add proper Ctrl+c handling
 TODO(): Add autoresizing of the TODO app UI(tree?)
+TODO(): Fix autoresizing
 TODO(): Finish a Rust TODO app
 TODO(): Finish a Game of Life with Rust with GUI(SDL?)
 TODO(): Learn Rust
@@ -8,3 +10,4 @@ DONE(2023-02-03 05:43:33.752245741 -05:00): Add date tracking to TODO app
 DONE(2023-02-04 19:05:33.588875 -05:00): Add safechecks for editing mode
 DONE(2023-02-04 19:12:32.253412 -05:00): Add editing option to TODO app
 DONE(2023-02-04 19:17:54.422294 -05:00): Add inserting option to TODO app
+DONE(2023-02-06 13:47:25.683700140 -05:00): Add buffered stdout write

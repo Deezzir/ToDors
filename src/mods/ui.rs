@@ -196,7 +196,7 @@ impl UI {
             .last()
             .expect("Tried to render horizontal line outside of any layout");
 
-        let text = "‾".repeat(layout.borrow().max_size.x as usize);
+        let text = "-".repeat(layout.borrow().max_size.x as usize); //‾
         self.label(&text);
     }
 
