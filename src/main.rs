@@ -3,6 +3,7 @@ mod mods;
 
 use chrono::Local;
 use std::env::args;
+use std::path::Path;
 use std::process::exit;
 
 use ncurses::*;
@@ -37,10 +38,16 @@ Author: Iurii Kondrakov <deezzir@gmail.com>
         <q>, <ctrl-c>     ~ Quit
 "#;
 
-const FILE_PATH: &str = "TODO";
+const FILE_PATH: &str = "TODO.list";
 
 fn main() {
     let file_path: String = get_args();
+    let file_name: String = Path::new(&file_path)
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_string();
 
     ncurses_init();
     let mut editing: bool = false;
@@ -77,7 +84,7 @@ fn main() {
                 ui.begin_layout(LayoutKind::Vert);
                 {
                     ui.label_styled(&format!("[DATE]: {date}"), UI_PAIR);
-                    ui.label_styled(&format!("[FILE]: {file_path}"), UI_PAIR);
+                    ui.label_styled(&format!("[FILE]: {file_name}"), UI_PAIR);
                 }
                 ui.end_layout();
             }
