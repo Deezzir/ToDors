@@ -64,11 +64,18 @@ impl Operation {
 pub struct Item {
     text: String,
     date: DateTime<Local>,
+    sub_items: Vec<Item>,
+    dones_num: usize,
 }
 
 impl Item {
     fn new(text: String, date: DateTime<Local>) -> Self {
-        Self { text, date }
+        Self {
+            text,
+            date,
+            sub_items: Vec::new(),
+            dones_num: 0,
+        }
     }
 
     pub fn get_text(&self) -> &String {
@@ -528,13 +535,13 @@ impl TodoApp {
         }
     }
 
-    pub fn insert_item(&mut self) -> usize {
+    pub fn insert_item(&mut self) -> Option<usize> {
         assert!(
             !self.is_in_edit(),
             "insert_item() called in already running edit mode."
         );
 
-        let mut editing_cursor = 1;
+        let mut editing_cursor = None;
 
         match self.panel {
             Panel::Todo => {
@@ -542,7 +549,7 @@ impl TodoApp {
                 self.operation_stack
                     .push(Operation::new(Action::Insert, Panel::Todo));
                 self.todos.insert();
-                editing_cursor = 0;
+                editing_cursor = Some(0);
 
                 self.operation_stack
                     .push(Operation::new(Action::InEdit, self.panel));
@@ -556,7 +563,15 @@ impl TodoApp {
         editing_cursor
     }
 
-    pub fn edit_item(&mut self) -> usize {
+    pub fn append_item(&mut self) -> Option<usize> {
+        assert!(
+            !self.is_in_edit(),
+            "append_item() called in already running edit mode."
+        );
+        todo!("append_item() not implemented yet.");
+    }
+
+    pub fn edit_item(&mut self) -> Option<usize> {
         assert!(
             !self.is_in_edit(),
             "edit_item() called in already running edit mode."
@@ -586,9 +601,10 @@ impl TodoApp {
             self.operation_stack
                 .push(Operation::new(Action::InEdit, self.panel));
             self.message.push_str("Editing current item.");
-        }
 
-        editing_cursor
+            return Some(editing_cursor);
+        }
+        None
     }
 
     pub fn edit_item_with(&mut self, cur: &mut usize, key: i32) {
@@ -615,7 +631,7 @@ impl TodoApp {
             Panel::Todo => {
                 if self.todos.get_item().text.is_empty() {
                     self.message.push_str("TODO item can't be empty.");
-                    return true;
+                    return false;
                 }
             }
             Panel::Done => {
@@ -626,7 +642,7 @@ impl TodoApp {
         }
 
         self.operation_stack.pop();
-        false
+        true
     }
 
     fn is_in_edit(&self) -> bool {

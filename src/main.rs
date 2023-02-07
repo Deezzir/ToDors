@@ -38,12 +38,18 @@ Author: Iurii Kondrakov <deezzir@gmail.com>
 
 const FILE_PATH: &str = "TODO";
 
+#[derive(PartialEq)]
+enum Mode {
+    Edit,
+    Normal,
+}
+
 fn main() {
     set_sig_handler();
     let file_path: String = get_args();
 
     ncurses_init();
-    let mut editing: bool = false;
+    let mut mode: Mode = Mode::Normal;
     let mut editing_cursor: usize = 0;
     let mut app: TodoApp = TodoApp::new();
     let mut ui = UI::new();
@@ -104,7 +110,7 @@ fn main() {
                     for todo in app.get_todos() {
                         if app.is_cur_todo(todo) {
                             if app.is_in_todo_panel() {
-                                if editing {
+                                if mode == Mode::Edit {
                                     ui.edit_label(
                                         todo.get_text(),
                                         editing_cursor,
@@ -142,7 +148,7 @@ fn main() {
                     for done in app.get_dones() {
                         if app.is_cur_done(done) {
                             if app.is_in_done_panel() {
-                                if editing {
+                                if mode == Mode::Edit {
                                     ui.edit_label(
                                         done.get_text(),
                                         editing_cursor,
@@ -176,38 +182,55 @@ fn main() {
         refresh();
         let key = getch();
         if key != ERR {
-            if !editing {
-                app.clear_message();
-                match char::from_u32(key as u32).unwrap() {
-                    'k' | '\u{103}' => app.go_up(),
-                    'j' | '\u{102}' => app.go_down(),
-                    'g' => app.go_top(),
-                    'G' => app.go_bottom(),
-                    'K' => app.drag_up(),
-                    'J' => app.drag_down(),
-                    '\n' => app.transfer_item(),
-                    'd' => app.delete_item(),
-                    'i' => {
-                        editing_cursor = app.insert_item();
-                        editing = editing_cursor == 0;
+            match mode {
+                Mode::Normal => {
+                    app.clear_message();
+                    match char::from_u32(key as u32).unwrap() {
+                        'k' | '\u{103}' => app.go_up(),
+                        'j' | '\u{102}' => app.go_down(),
+                        'g' => app.go_top(),
+                        'G' => app.go_bottom(),
+                        'K' => app.drag_up(),
+                        'J' => app.drag_down(),
+                        '\n' => app.transfer_item(),
+                        'd' => app.delete_item(),
+                        'i' => {
+                            if let Some(cur) = app.insert_item() {
+                                editing_cursor = cur;
+                                mode = Mode::Edit;
+                            }
+                        }
+                        'a' => {
+                            if let Some(cur) = app.append_item() {
+                                editing_cursor = cur;
+                                mode = Mode::Edit;
+                            }
+                        }
+                        'r' => {
+                            if let Some(cur) = app.edit_item() {
+                                editing_cursor = cur;
+                                mode = Mode::Edit;
+                            }
+                        }
+                        'u' => app.undo(),
+                        '\t' => app.toggle_panel(),
+                        'q' | '\u{3}' => break,
+                        _ => {}
                     }
-                    'r' => {
-                        editing_cursor = app.edit_item();
-                        editing = editing_cursor > 0;
-                    }
-                    'u' => app.undo(),
-                    '\t' => app.toggle_panel(),
-                    'q' | '\u{3}' => break,
-                    _ => {}
                 }
-            } else {
-                match key as u8 as char {
-                    '\n' => {
-                        //'\u{1b}'
-                        editing = app.finish_edit();
-                        editing_cursor = if editing { editing_cursor } else { 0 };
+                Mode::Edit => {
+                    match key as u8 as char {
+                        '\n' => {
+                            //'\u{1b}'
+                            mode = if app.finish_edit() {
+                                editing_cursor = 0;
+                                Mode::Normal
+                            } else {
+                                Mode::Edit
+                            };
+                        }
+                        _ => app.edit_item_with(&mut editing_cursor, key),
                     }
-                    _ => app.edit_item_with(&mut editing_cursor, key),
                 }
             }
         }

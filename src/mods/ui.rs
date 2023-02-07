@@ -235,11 +235,13 @@ impl UI {
             .last_mut()
             .expect("Tried to render edit mode outside of any layout");
         let pos = layout.borrow().available_pos();
+        let space_fill =
+            " ".repeat((layout.borrow().max_size.x as usize).saturating_sub(text.len()));
 
         // Buffer
         {
             mv(pos.y, pos.x);
-            addstr(&format!("{prefix}{text}"));
+            addstr(&format!("{prefix}{text}{space_fill}"));
             layout
                 .borrow_mut()
                 .add_widget(Vec2::new(text.len() as i32, 1));
