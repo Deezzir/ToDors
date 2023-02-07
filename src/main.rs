@@ -69,15 +69,20 @@ fn main() {
                             app.get_dones_n()
                         ),
                         UI_PAIR,
+                        Some(A_BOLD()),
                     );
-                    ui.label_styled(&format!("[MESSAGE]: {}", app.get_message()), UI_PAIR);
+                    ui.label_styled(
+                        &format!("[MESSAGE]: {}", app.get_message()),
+                        UI_PAIR,
+                        Some(A_BOLD()),
+                    );
                 }
                 ui.end_layout();
 
                 ui.begin_layout(LayoutKind::Vert);
                 {
-                    ui.label_styled(&format!("[DATE]: {date}"), UI_PAIR);
-                    ui.label_styled(&format!("[FILE]: {file_path}"), UI_PAIR);
+                    ui.label_styled(&format!("[DATE]: {date}"), UI_PAIR, Some(A_BOLD()));
+                    ui.label_styled(&format!("[FILE]: {file_path}"), UI_PAIR, Some(A_BOLD()));
                 }
                 ui.end_layout();
             }
@@ -91,9 +96,9 @@ fn main() {
                 ui.begin_layout(LayoutKind::Vert);
                 {
                     if app.is_in_todo_panel() {
-                        ui.label_styled("[TODO]", HIGHLIGHT_PAIR);
+                        ui.label_styled("[TODO]", HIGHLIGHT_PAIR, None);
                     } else {
-                        ui.label_styled(" TODO ", UNSELECTED_PAIR);
+                        ui.label_styled(" TODO ", UNSELECTED_PAIR, None);
                     }
                     ui.hl();
                     for todo in app.get_todos() {
@@ -109,12 +114,14 @@ fn main() {
                                     ui.label_styled(
                                         &format!("- [ ] {}", todo.get_text()),
                                         SELECTED_PAIR,
+                                        None,
                                     );
                                 }
                             } else {
                                 ui.label_styled(
                                     &format!("- [ ] {}", todo.get_text()),
                                     UNSELECTED_PAIR,
+                                    None,
                                 );
                             }
                         } else {
@@ -127,9 +134,9 @@ fn main() {
                 ui.begin_layout(LayoutKind::Vert);
                 {
                     if app.is_in_done_panel() {
-                        ui.label_styled("[DONE]", HIGHLIGHT_PAIR);
+                        ui.label_styled("[DONE]", HIGHLIGHT_PAIR, None);
                     } else {
-                        ui.label_styled(" DONE ", UNSELECTED_PAIR);
+                        ui.label_styled(" DONE ", UNSELECTED_PAIR, None);
                     }
                     ui.hl();
                     for done in app.get_dones() {
@@ -145,12 +152,14 @@ fn main() {
                                     ui.label_styled(
                                         &format!("- [X] ({}) {}", done.get_date(), done.get_text()),
                                         SELECTED_PAIR,
+                                        None,
                                     );
                                 }
                             } else {
                                 ui.label_styled(
                                     &format!("- [X]|{}| {}", done.get_date(), done.get_text()),
                                     UNSELECTED_PAIR,
+                                    None,
                                 );
                             }
                         } else {

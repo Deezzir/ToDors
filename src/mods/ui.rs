@@ -217,10 +217,16 @@ impl UI {
             .add_widget(Vec2::new(text.len() as i32, 1));
     }
 
-    pub fn label_styled(&mut self, text: &str, pair: i16) {
-        attr_on(COLOR_PAIR(pair));
+    pub fn label_styled(&mut self, text: &str, color_pair: i16, style: Option<u32>) {
+        if let Some(s) = style {
+            attr_on(s);
+        }
+        attr_on(COLOR_PAIR(color_pair));
         self.label(text);
-        attr_off(COLOR_PAIR(pair));
+        attr_off(COLOR_PAIR(color_pair));
+        if let Some(s) = style {
+            attr_off(s);
+        }
     }
 
     pub fn edit_label(&mut self, text: &String, cur: usize, prefix: String) {
