@@ -194,8 +194,8 @@ fn main() {
                 Mode::Normal => {
                     app.clear_message();
                     match char::from_u32(key as u32).unwrap() {
-                        'k' | '\u{103}' => app.go_up(),
-                        'j' | '\u{102}' => app.go_down(),
+                        'k' | '\u{103}' => app.go_up(),   // 'k' or 'up'
+                        'j' | '\u{102}' => app.go_down(), // 'j' or 'down'
                         'g' => app.go_top(),
                         'G' => app.go_bottom(),
                         'K' => app.drag_up(),
@@ -228,8 +228,8 @@ fn main() {
                 }
                 Mode::Edit => {
                     match key as u8 as char {
-                        '\n' => {
-                            //'\u{1b}'
+                        '\n' | '\u{1b}' => {
+                            // Enter or Esc
                             mode = if app.finish_edit() {
                                 editing_cursor = 0;
                                 Mode::Normal
