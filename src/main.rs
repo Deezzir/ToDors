@@ -2,13 +2,12 @@ extern crate regex;
 mod mods;
 
 use chrono::Local;
-use std::env::args;
-use std::process::exit;
-
 use ncurses::*;
+use std::sync::atomic::Ordering;
 
 use mods::todo::*;
 use mods::ui::*;
+use mods::utils::*;
 
 const SELECTED_PAIR: i16 = 1;
 const UNSELECTED_PAIR: i16 = 2;
@@ -40,6 +39,7 @@ Author: Iurii Kondrakov <deezzir@gmail.com>
 const FILE_PATH: &str = "TODO";
 
 fn main() {
+    set_sig_handler();
     let file_path: String = get_args();
 
     ncurses_init();
@@ -49,7 +49,7 @@ fn main() {
     let mut ui = UI::new();
 
     app.parse(&file_path);
-    loop {
+    while !QUIT.load(Ordering::SeqCst) {
         erase();
         let date = Local::now().format("%Y %a %b %d %H:%M:%S");
         let mut w = 0;
@@ -193,7 +193,8 @@ fn main() {
                 }
             } else {
                 match key as u8 as char {
-                    '\n' | '\u{1b}' => {
+                    '\n' => {
+                        //'\u{1b}'
                         editing = app.finish_edit();
                         editing_cursor = if editing { editing_cursor } else { 0 };
                     }
@@ -205,49 +206,4 @@ fn main() {
 
     endwin();
     app.save(&file_path).unwrap();
-}
-
-fn ncurses_init() {
-    setlocale(LcCategory::all, "");
-    // Init ncurses
-    initscr();
-    raw();
-    // Allow for extended keyboard (like F1).
-    noecho();
-    keypad(stdscr(), true);
-    curs_set(CURSOR_VISIBILITY::CURSOR_INVISIBLE);
-    // Set timeout and esc delay
-    timeout(16);
-    set_escdelay(0);
-    // Set colors
-    use_default_colors();
-    start_color();
-    init_pair(HIGHLIGHT_PAIR, COLOR_BLACK, COLOR_GREEN);
-    init_pair(SELECTED_PAIR, COLOR_BLACK, COLOR_CYAN);
-    init_pair(UNSELECTED_PAIR, COLOR_BLACK, COLOR_WHITE);
-    init_pair(UI_PAIR, COLOR_WHITE, COLOR_BLACK);
-}
-
-fn get_args() -> String {
-    let mut args = args().skip(1);
-
-    match args.next() {
-        Some(arg) => match arg.as_str() {
-            "-f" | "--file" => args.next().unwrap_or_else(|| {
-                eprintln!("[ERROR]: No file given for '{arg}'.");
-                eprintln!("{USAGE}");
-                exit(1);
-            }),
-            "-h" | "--help" => {
-                println!("{HELP}\n{USAGE}");
-                exit(0);
-            }
-            _ => {
-                eprintln!("[ERROR]: Unknown argument: '{arg}'.");
-                eprintln!("{USAGE}");
-                exit(1);
-            }
-        },
-        None => FILE_PATH.to_string(),
-    }
 }
