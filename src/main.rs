@@ -116,25 +116,17 @@ fn main() {
                     }
                     ui.hl();
                     for todo in app.get_todos() {
-                        if app.is_cur_todo(todo) {
-                            if app.is_in_todo_panel() {
-                                if mode == Mode::Edit {
-                                    ui.edit_label(
-                                        todo.get_text(),
-                                        editing_cursor,
-                                        "- [ ] ".to_string(),
-                                    );
-                                } else {
-                                    ui.label_styled(
-                                        &format!("- [ ] {}", todo.get_text()),
-                                        SELECTED_PAIR,
-                                        None,
-                                    );
-                                }
+                        if app.is_cur_todo(todo) && app.is_in_todo_panel() {
+                            if mode == Mode::Edit {
+                                ui.edit_label(
+                                    todo.get_text(),
+                                    editing_cursor,
+                                    "- [ ] ".to_string(),
+                                );
                             } else {
                                 ui.label_styled(
                                     &format!("- [ ] {}", todo.get_text()),
-                                    UNSELECTED_PAIR,
+                                    SELECTED_PAIR,
                                     None,
                                 );
                             }
@@ -154,25 +146,17 @@ fn main() {
                     }
                     ui.hl();
                     for done in app.get_dones() {
-                        if app.is_cur_done(done) {
-                            if app.is_in_done_panel() {
-                                if mode == Mode::Edit {
-                                    ui.edit_label(
-                                        done.get_text(),
-                                        editing_cursor,
-                                        "- [X] ".to_string(),
-                                    );
-                                } else {
-                                    ui.label_styled(
-                                        &format!("- [X] ({}) {}", done.get_date(), done.get_text()),
-                                        SELECTED_PAIR,
-                                        None,
-                                    );
-                                }
+                        if app.is_cur_done(done) && app.is_in_done_panel() {
+                            if mode == Mode::Edit {
+                                ui.edit_label(
+                                    done.get_text(),
+                                    editing_cursor,
+                                    "- [X] ".to_string(),
+                                );
                             } else {
                                 ui.label_styled(
-                                    &format!("- [X]|{}| {}", done.get_date(), done.get_text()),
-                                    UNSELECTED_PAIR,
+                                    &format!("- [X] ({}) {}", done.get_date(), done.get_text()),
+                                    SELECTED_PAIR,
                                     None,
                                 );
                             }
