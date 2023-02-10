@@ -16,7 +16,7 @@ cargo run
 |-----------------------------------------------------|--------------------------------------|
 | <kbd>k/↑</kbd>,<kbd>j/↓</kbd>                       | Move UP/DOWN                         |
 | <kbd>SHIFT+k</kbd>,<kbd>SHIFT+j</kbd>               | Drag item UP/DOWN                    |
-| <kbd>g</kbd>,<kbd>G</kbd>                           | Jump to START/END of the list        |
+| <kbd>g</kbd>,<kbd>G</kbd>,<kbd>h</kbd>              | Jump to START/END/HALF of the list   |
 | <kbd>d</kbd>                                        | Delete 'Done' item                   |
 | <kbd>i</kbd>                                        | Insert a new 'Todo' item             |
 | <kbd>a</kbd>                                        | Add subtask to current 'Todo' item   |

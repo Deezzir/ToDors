@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use ncurses::*;
 
-use crate::{FILE_PATH, HELP, HIGHLIGHT_PAIR, SELECTED_PAIR, UI_PAIR, UNSELECTED_PAIR, USAGE};
+use crate::{FILE_PATH, FPS, HELP, HIGHLIGHT_PAIR, SELECTED_PAIR, UI_PAIR, UNSELECTED_PAIR, USAGE};
 
 #[cfg(not(unix))]
 compile_error! {"Windows is not supported right now"}
@@ -30,13 +30,13 @@ pub fn ncurses_init() {
     setlocale(LcCategory::all, "");
     // Init ncurses
     initscr();
-    raw();
+    // raw();
     // Allow for extended keyboard (like F1).
     noecho();
     keypad(stdscr(), true);
     curs_set(CURSOR_VISIBILITY::CURSOR_INVISIBLE);
     // Set timeout and esc delay
-    timeout(32);
+    timeout(1000 / FPS);
     set_escdelay(0);
     // Set colors
     use_default_colors();
@@ -68,5 +68,12 @@ pub fn get_args() -> String {
             }
         },
         None => FILE_PATH.to_string(),
+    }
+}
+
+pub fn truncate(s: &str, max_chars: usize) -> &str {
+    match s.char_indices().nth(max_chars) {
+        None => s,
+        Some((idx, _)) => &s[..idx],
     }
 }

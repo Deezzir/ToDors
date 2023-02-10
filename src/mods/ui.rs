@@ -1,9 +1,11 @@
 use std::cell::RefCell;
 use std::cmp::{max, min};
-use std::ops::{Add, Div, Mul};
+use std::ops::{Add, Div, Mul, Sub};
 use std::rc::Rc;
 
 use ncurses::*;
+
+use super::utils::truncate;
 
 type LayoutRef = Rc<RefCell<Box<Layout>>>;
 
@@ -12,18 +14,10 @@ pub enum LayoutKind {
     Horz,
 }
 
-#[allow(dead_code)]
-pub enum Side {
-    Left,
-    Right,
-    Top,
-    Bottom,
-}
-
 #[derive(Default, Clone, Copy, Debug)]
 pub struct Vec2 {
-    x: i32,
-    y: i32,
+    pub x: i32,
+    pub y: i32,
 }
 
 impl Vec2 {
@@ -51,6 +45,16 @@ impl Add for Vec2 {
         Self {
             x: self.x + rhs.x,
             y: self.y + rhs.y,
+        }
+    }
+}
+
+impl Sub for Vec2 {
+    type Output = Vec2;
+    fn sub(self, rhs: Self) -> Self::Output {
+        Self {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
         }
     }
 }
@@ -102,10 +106,7 @@ impl Layout {
                 let x = min(self.size.x, child_size.x);
                 self.pos + Vec2::new(x, 0)
             }
-            LayoutKind::Vert => {
-                let y = min(self.size.y, child_size.y);
-                self.pos + Vec2::new(0, y)
-            }
+            LayoutKind::Vert => self.pos + self.size * Vec2::new(0, 1),
         }
     }
 
@@ -141,12 +142,19 @@ impl Layout {
         }
     }
 
-    fn add_child(&mut self, child: LayoutRef) {
-        let size = Vec2::new(child.borrow().max_size.x, child.borrow().size.y);
+    fn add_child(&mut self, child: LayoutRef) -> Option<Vec2> {
+        let child_size = child.borrow().size;
+        let size = Vec2::new(child.borrow().max_size.x, child_size.y);
 
         self.resize(self.max_size);
         self.add_widget(size);
         self.children.push(child);
+
+        if self.children.len() > 1 {
+            Some(self.children[self.children.len() - 2].borrow().size - child_size)
+        } else {
+            None
+        }
     }
 }
 
@@ -206,8 +214,10 @@ impl UI {
             .last()
             .expect("Tried to render label outside of any layout");
         let pos = layout.borrow().available_pos();
+
         let space_fill =
             " ".repeat((layout.borrow().max_size.x as usize).saturating_sub(text.len()));
+        let text = truncate(text, layout.borrow().max_size.x as usize);
 
         mv(pos.y, pos.x);
         addstr(&format!("{text}{space_fill}"));
@@ -260,11 +270,23 @@ impl UI {
             .stack
             .pop()
             .expect("Can't end a non-existing layout. Was there UI::begin_layout()?");
-        self.stack
+        let size_diff = self
+            .stack
             .last()
             .expect("Can't end a non-existing layout. Was there UI::begin_layout() or UI::begin()?")
             .borrow_mut()
             .add_child(Rc::clone(&child));
+
+        if let Some(Vec2 { x: _, y }) = size_diff {
+            if y > 0 {
+                let pos = child.borrow().available_pos();
+                let space_fill = " ".repeat(child.borrow().max_size.x as usize);
+                for i in 0..y {
+                    mv(pos.y + i, pos.x);
+                    addstr(&space_fill.to_string());
+                }
+            }
+        }
     }
 
     pub fn end(&mut self) {

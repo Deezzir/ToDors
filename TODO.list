@@ -10,6 +10,7 @@ TODO(): Finish a Rust TODO app
             TODO(): deleting
             TODO(): unmarking
     TODO(): Fix autoresizing
+        TODO(): cut text if its going out of bounds
         TODO(): optimize redraw
         TODO(): clear before adding child
 TODO(): Finish a Game of Life with Rust with GUI

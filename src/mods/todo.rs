@@ -9,7 +9,7 @@ use ncurses::constants;
 use regex::Regex;
 // const MAX_STACK_SIZE: usize = 20;
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 enum Panel {
     Todo,
     Done,
@@ -24,7 +24,7 @@ impl Panel {
     }
 }
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone, Copy, Debug)]
 enum Action {
     Delete,
     DragUp,
@@ -51,6 +51,7 @@ impl fmt::Display for Action {
     }
 }
 
+#[derive(Debug)]
 struct Operation {
     action: Action,
     panel: Panel,
@@ -62,7 +63,7 @@ impl Operation {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone, PartialEq, Debug)]
 pub struct Item {
     text: String,
     date: DateTime<Local>,
@@ -89,8 +90,13 @@ impl Item {
     pub fn get_date(&self) -> String {
         self.date.format("%y-%m-%d").to_string()
     }
+
+    pub fn trim_text(&mut self) {
+        self.text = self.text.trim().to_string();
+    }
 }
 
+#[derive(Debug)]
 struct List {
     state_stack: Vec<(Vec<Item>, usize)>,
     cur: usize,
@@ -110,14 +116,14 @@ impl<'a> Iterator for ListIter<'a> {
             let item = &self.obj.list[self.cur];
             self.cur += 1;
 
-            let mut indent = 0;
+            let mut level = 0;
             let mut parent = item.parent;
             while let Some(p) = parent {
-                indent += 1;
+                level += 1;
                 parent = self.obj.list[p].parent;
             }
 
-            Some((item, indent))
+            Some((item, level))
         } else {
             None
         }
@@ -140,11 +146,16 @@ impl List {
     fn add_child_to(&mut self, parent: usize, child: usize) {
         if let Some(item) = self.list.get_mut(parent) {
             item.children.push(child);
+            item.dones_num += 1;
         }
     }
 
     fn get_cur_item(&self) -> Option<&Item> {
         self.list.get(self.cur)
+    }
+
+    fn get_cur_item_mut(&mut self) -> Option<&mut Item> {
+        self.list.get_mut(self.cur)
     }
 
     fn record_state(&mut self) {
@@ -207,16 +218,27 @@ impl List {
         self.cur = 0;
     }
 
+    fn half(&mut self) {
+        if !self.list.is_empty() {
+            self.cur = self.list.len() / 2;
+        }
+    }
+
     fn last(&mut self) {
         if !self.list.is_empty() {
             self.cur = self.list.len() - 1;
         }
     }
 
-    fn shift_indices(&mut self, from: usize) {
+    fn shift_indices(&mut self, from: usize, by: usize, parent: Option<usize>) {
         for item in self.list.iter_mut().skip(from) {
-            if let Some(p) = item.parent {
-                item.parent = Some(p + 1);
+            if item.parent > parent {
+                if let Some(p) = item.parent {
+                    item.parent = Some(p + by);
+                }
+            }
+            for child_id in item.children.iter_mut() {
+                *child_id += by;
             }
         }
     }
@@ -227,9 +249,10 @@ impl List {
             return Err("Can't insert item. Current item is a subtask.");
         }
 
+        self.shift_indices(self.cur, 1, None);
         self.list
             .insert(self.cur, Item::new(String::new(), Local::now(), None));
-        self.shift_indices(self.cur + 1);
+
         Ok(())
     }
 
@@ -238,13 +261,15 @@ impl List {
             return Err("Can't add subtask item. List is empty.");
         }
 
+        self.shift_indices(self.cur, 1, Some(self.cur));
         self.list.insert(
             self.cur + 1,
             Item::new(String::new(), Local::now(), Some(self.cur)),
         );
-        self.list[self.cur].children.push(self.cur);
+        self.list[self.cur].children.push(self.cur + 1);
         self.list[self.cur].dones_num += 1;
         self.cur += 1;
+
         Ok(())
     }
 
@@ -321,6 +346,7 @@ impl List {
     }
 }
 
+#[derive(Debug)]
 pub struct TodoApp {
     message: String,
     panel: Panel,
@@ -364,10 +390,6 @@ impl TodoApp {
         &self.message
     }
 
-    // pub fn get_todos(&self) -> &Vec<Item> {
-    //     &self.todos.list
-    // }
-
     pub fn iter_todos(&self) -> ListIter {
         ListIter {
             obj: &self.todos,
@@ -376,12 +398,12 @@ impl TodoApp {
     }
 
     pub fn get_todos_n(&self) -> usize {
-        self.todos.list.len()
+        self.todos
+            .list
+            .iter()
+            .filter(|item| item.parent.is_none())
+            .count()
     }
-
-    // pub fn get_dones(&self) -> &Vec<Item> {
-    //     &self.dones.list
-    // }
 
     pub fn iter_dones(&self) -> ListIter {
         ListIter {
@@ -391,7 +413,11 @@ impl TodoApp {
     }
 
     pub fn get_dones_n(&self) -> usize {
-        self.dones.list.len()
+        self.dones
+            .list
+            .iter()
+            .filter(|item| item.parent.is_none())
+            .count()
     }
 
     pub fn clear_message(&mut self) {
@@ -436,9 +462,10 @@ impl TodoApp {
                             self.todos.add_child_to(parent, i);
                         }
                     } else if let Some(c) = re_done.captures(&line) {
-                        let date = DateTime::parse_from_str(&c[2], "%Y-%m-%d %H:%M %z").expect(
-                            &format!("[ERROR]: {}:{}: invalid date format", file_path, i + 1),
-                        );
+                        let date = DateTime::parse_from_str(&c[2], "%Y-%m-%d %H:%M %z")
+                            .unwrap_or_else(|_| {
+                                panic!("[ERROR]: {}:{}: invalid date format", file_path, i + 1)
+                            });
                         self.dones.add_item(Item::new(
                             c[3].to_string(),
                             <DateTime<Local>>::from(date),
@@ -505,6 +532,14 @@ impl TodoApp {
         match self.panel {
             Panel::Todo => self.todos.first(),
             Panel::Done => self.dones.first(),
+        }
+    }
+
+    pub fn go_half(&mut self) {
+        assert!(!self.is_in_edit(), "Can't go half while in edit mode.");
+        match self.panel {
+            Panel::Todo => self.todos.half(),
+            Panel::Done => self.dones.half(),
         }
     }
 
@@ -789,13 +824,18 @@ impl TodoApp {
         match self.panel {
             Panel::Todo => {
                 if self.todos.get_cur_item().unwrap().text.is_empty() {
-                    let act = self.operation_stack[self.operation_stack.len() - 2].action;
+                    let act = self
+                        .operation_stack
+                        .get(self.operation_stack.len() - 2)
+                        .unwrap()
+                        .action;
                     match act {
                         Action::Insert | Action::Append => {
                             self.todos.delete().unwrap();
                             if act == Action::Append {
                                 self.todos.up();
                             }
+                            self.todos.revert_state().unwrap();
                             self.operation_stack.pop();
                         }
                         Action::Edit => {
@@ -804,11 +844,15 @@ impl TodoApp {
                         }
                         _ => unreachable!(),
                     }
+                } else {
+                    self.todos.get_cur_item_mut().unwrap().trim_text();
                 }
             }
             Panel::Done => {
                 if self.dones.get_cur_item().unwrap().text.is_empty() {
                     self.dones.delete().unwrap();
+                } else {
+                    self.dones.get_cur_item_mut().unwrap().trim_text();
                 }
             }
         }
@@ -820,9 +864,9 @@ impl TodoApp {
     fn is_in_edit(&self) -> bool {
         let last_op = self.operation_stack.last();
         if last_op.is_none() {
-            return false;
+            false
+        } else {
+            last_op.unwrap().action == Action::InEdit
         }
-
-        last_op.unwrap().action == Action::InEdit
     }
 }
