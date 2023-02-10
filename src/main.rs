@@ -5,7 +5,6 @@ use chrono::Local;
 use std::path::Path;
 
 use ncurses::*;
-use std::sync::atomic::Ordering;
 
 use mods::todo::*;
 use mods::ui::*;
@@ -30,6 +29,7 @@ Author: Iurii Kondrakov <deezzir@gmail.com>
         <g>, <G>          ~ Go to the top/bottom of the list
         <d>               ~ Delete 'Done' element
         <i>               ~ Insert a new 'Todo' element
+        <a>               ~ Add a subtask to the current 'Todo' element
         <u>               ~ Undo last action
         <r>               ~ Edit current item
         <enter>           ~ Transfer current elemen/Save edited element
@@ -47,7 +47,8 @@ enum Mode {
 }
 
 fn main() {
-    set_sig_handler();
+    sig_handler_init();
+
     let file_path: String = get_args();
     let file_name: String = Path::new(&file_path)
         .file_name()
@@ -63,7 +64,7 @@ fn main() {
     let mut ui = UI::new();
 
     app.parse(&file_path);
-    while !QUIT.load(Ordering::SeqCst) {
+    while !poll() {
         erase();
         let date = Local::now().format("%Y %a %b %d %H:%M:%S");
         let mut w = 0;
@@ -115,23 +116,24 @@ fn main() {
                         ui.label_styled(" TODO ", UNSELECTED_PAIR, None);
                     }
                     ui.hl();
-                    for todo in app.get_todos() {
+                    for (todo, i) in app.iter_todos() {
+                        let indent = "    ".repeat(i);
                         if app.is_cur_todo(todo) && app.is_in_todo_panel() {
                             if mode == Mode::Edit {
                                 ui.edit_label(
                                     todo.get_text(),
                                     editing_cursor,
-                                    "- [ ] ".to_string(),
+                                    format!("{indent}[ ] "),
                                 );
                             } else {
                                 ui.label_styled(
-                                    &format!("- [ ] {}", todo.get_text()),
+                                    &format!("{indent}[ ] {}", todo.get_text()),
                                     SELECTED_PAIR,
                                     None,
                                 );
                             }
                         } else {
-                            ui.label(&format!("- [ ] {}", todo.get_text()));
+                            ui.label(&format!("{indent}[ ] {}", todo.get_text()));
                         }
                     }
                 }
@@ -145,23 +147,24 @@ fn main() {
                         ui.label_styled(" DONE ", UNSELECTED_PAIR, None);
                     }
                     ui.hl();
-                    for done in app.get_dones() {
+                    for (done, i) in app.iter_dones() {
+                        let indent = "    ".repeat(i);
                         if app.is_cur_done(done) && app.is_in_done_panel() {
                             if mode == Mode::Edit {
                                 ui.edit_label(
                                     done.get_text(),
                                     editing_cursor,
-                                    "- [X] ".to_string(),
+                                    format!("{indent}[X] "),
                                 );
                             } else {
                                 ui.label_styled(
-                                    &format!("- [X] ({}) {}", done.get_date(), done.get_text()),
+                                    &format!("[X] ({}) {}", done.get_date(), done.get_text()),
                                     SELECTED_PAIR,
                                     None,
                                 );
                             }
                         } else {
-                            ui.label(&format!("- [X]|{}| {}", done.get_date(), done.get_text()));
+                            ui.label(&format!("[X]|{}| {}", done.get_date(), done.get_text()));
                         }
                     }
                 }
@@ -206,7 +209,8 @@ fn main() {
                         }
                         'u' => app.undo(),
                         '\t' => app.toggle_panel(),
-                        'q' | '\u{3}' => break,
+                        'q' => break,
+                        // 'q' | '\u{3}' => break,
                         _ => {}
                     }
                 }

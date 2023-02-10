@@ -6,11 +6,24 @@ use ncurses::*;
 
 use crate::{FILE_PATH, HELP, HIGHLIGHT_PAIR, SELECTED_PAIR, UI_PAIR, UNSELECTED_PAIR, USAGE};
 
-pub static QUIT: AtomicBool = AtomicBool::new(false);
+#[cfg(not(unix))]
+compile_error! {"Windows is not supported right now"}
+static CTRLC: AtomicBool = AtomicBool::new(false);
 
-pub fn set_sig_handler() {
-    ctrlc::set_handler(move || QUIT.store(true, Ordering::SeqCst))
-        .expect("[ERROR]: Failed to set Ctrl-C handler");
+extern "C" fn callback(_signum: i32) {
+    CTRLC.store(true, Ordering::Relaxed);
+}
+
+pub fn sig_handler_init() {
+    unsafe {
+        if libc::signal(libc::SIGINT, callback as libc::sighandler_t) == libc::SIG_ERR {
+            unreachable!()
+        }
+    }
+}
+
+pub fn poll() -> bool {
+    CTRLC.swap(false, Ordering::Relaxed)
 }
 
 pub fn ncurses_init() {
@@ -23,7 +36,7 @@ pub fn ncurses_init() {
     keypad(stdscr(), true);
     curs_set(CURSOR_VISIBILITY::CURSOR_INVISIBLE);
     // Set timeout and esc delay
-    timeout(16);
+    timeout(32);
     set_escdelay(0);
     // Set colors
     use_default_colors();

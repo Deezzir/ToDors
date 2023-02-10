@@ -1,4 +1,4 @@
-use std::cmp::min;
+use std::cmp::{min, Ordering};
 use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead, Write};
@@ -24,13 +24,14 @@ impl Panel {
     }
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 enum Action {
     Delete,
     DragUp,
     DragDown,
     Transfer,
     Insert,
+    Append,
     Edit,
     InEdit,
 }
@@ -43,6 +44,7 @@ impl fmt::Display for Action {
             Action::DragDown => write!(f, "Drag down"),
             Action::Transfer => write!(f, "Transfer"),
             Action::Insert => write!(f, "Insert"),
+            Action::Append => write!(f, "Append"),
             Action::Edit => write!(f, "Edit"),
             Action::InEdit => write!(f, ""),
         }
@@ -64,16 +66,18 @@ impl Operation {
 pub struct Item {
     text: String,
     date: DateTime<Local>,
-    sub_items: Vec<Item>,
+    parent: Option<usize>,
+    children: Vec<usize>,
     dones_num: usize,
 }
 
 impl Item {
-    fn new(text: String, date: DateTime<Local>) -> Self {
+    fn new(text: String, date: DateTime<Local>, parent: Option<usize>) -> Self {
         Self {
             text,
             date,
-            sub_items: Vec::new(),
+            parent,
+            children: Vec::new(),
             dones_num: 0,
         }
     }
@@ -93,6 +97,33 @@ struct List {
     list: Vec<Item>,
 }
 
+pub struct ListIter<'a> {
+    obj: &'a List,
+    cur: usize,
+}
+
+impl<'a> Iterator for ListIter<'a> {
+    type Item = (&'a Item, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.cur < self.obj.list.len() {
+            let item = &self.obj.list[self.cur];
+            self.cur += 1;
+
+            let mut indent = 0;
+            let mut parent = item.parent;
+            while let Some(p) = parent {
+                indent += 1;
+                parent = self.obj.list[p].parent;
+            }
+
+            Some((item, indent))
+        } else {
+            None
+        }
+    }
+}
+
 impl List {
     fn new() -> Self {
         Self {
@@ -106,8 +137,14 @@ impl List {
         self.list.push(item);
     }
 
-    fn get_item(&self) -> &Item {
-        &self.list[self.cur]
+    fn add_child_to(&mut self, parent: usize, child: usize) {
+        if let Some(item) = self.list.get_mut(parent) {
+            item.children.push(child);
+        }
+    }
+
+    fn get_cur_item(&self) -> Option<&Item> {
+        self.list.get(self.cur)
     }
 
     fn record_state(&mut self) {
@@ -139,6 +176,10 @@ impl List {
     }
 
     fn drag_up(&mut self) -> Result<(), &'static str> {
+        if self.list.is_empty() {
+            return Err("Can't drag up. List is empty.");
+        }
+
         if self.cur != 0 && self.list.len() > 1 {
             self.list.swap(self.cur, self.cur - 1);
             self.cur -= 1;
@@ -149,6 +190,10 @@ impl List {
     }
 
     fn drag_down(&mut self) -> Result<(), &'static str> {
+        if self.list.is_empty() {
+            return Err("Can't drag down. List is empty.");
+        }
+
         if self.cur < self.list.len() - 1 && self.list.len() > 1 {
             self.list.swap(self.cur, self.cur + 1);
             self.cur += 1;
@@ -168,9 +213,39 @@ impl List {
         }
     }
 
-    fn insert(&mut self) {
+    fn shift_indices(&mut self, from: usize) {
+        for item in self.list.iter_mut().skip(from) {
+            if let Some(p) = item.parent {
+                item.parent = Some(p + 1);
+            }
+        }
+    }
+
+    fn insert(&mut self) -> Result<(), &'static str> {
+        let item = self.get_cur_item();
+        if item.is_some() && item.unwrap().parent.is_some() {
+            return Err("Can't insert item. Current item is a subtask.");
+        }
+
         self.list
-            .insert(self.cur, Item::new(String::new(), Local::now()));
+            .insert(self.cur, Item::new(String::new(), Local::now(), None));
+        self.shift_indices(self.cur + 1);
+        Ok(())
+    }
+
+    fn append(&mut self) -> Result<(), &'static str> {
+        if self.list.is_empty() {
+            return Err("Can't add subtask item. List is empty.");
+        }
+
+        self.list.insert(
+            self.cur + 1,
+            Item::new(String::new(), Local::now(), Some(self.cur)),
+        );
+        self.list[self.cur].children.push(self.cur);
+        self.list[self.cur].dones_num += 1;
+        self.cur += 1;
+        Ok(())
     }
 
     fn delete(&mut self) -> Result<(), &'static str> {
@@ -278,27 +353,41 @@ impl TodoApp {
     }
 
     pub fn is_cur_todo(&self, todo: &Item) -> bool {
-        self.todos.list[self.todos.cur] == *todo
+        self.todos.get_cur_item().map_or(false, |t| t == todo)
     }
 
     pub fn is_cur_done(&self, done: &Item) -> bool {
-        self.dones.list[self.dones.cur] == *done
+        self.dones.get_cur_item().map_or(false, |d| d == done)
     }
 
     pub fn get_message(&self) -> &String {
         &self.message
     }
 
-    pub fn get_todos(&self) -> &Vec<Item> {
-        &self.todos.list
+    // pub fn get_todos(&self) -> &Vec<Item> {
+    //     &self.todos.list
+    // }
+
+    pub fn iter_todos(&self) -> ListIter {
+        ListIter {
+            obj: &self.todos,
+            cur: 0,
+        }
     }
 
     pub fn get_todos_n(&self) -> usize {
         self.todos.list.len()
     }
 
-    pub fn get_dones(&self) -> &Vec<Item> {
-        &self.dones.list
+    // pub fn get_dones(&self) -> &Vec<Item> {
+    //     &self.dones.list
+    // }
+
+    pub fn iter_dones(&self) -> ListIter {
+        ListIter {
+            obj: &self.dones,
+            cur: 0,
+        }
     }
 
     pub fn get_dones_n(&self) -> usize {
@@ -311,23 +400,55 @@ impl TodoApp {
 
     pub fn parse(&mut self, file_path: &str) {
         let file = File::open(file_path);
-        let re_todo = Regex::new(r"^TODO\(\): (.*)$").unwrap();
-        let re_done = Regex::new(r"^DONE\((.*)\): (.*)$").unwrap();
+        let re_indent = Regex::new(r"^((\s{4})*)\S+").unwrap();
+        let re_todo = Regex::new(r"^(\s{4})*TODO\(\): (.*)$").unwrap();
+        let re_done = Regex::new(r"^(\s{4})*DONE\((.*)\): (.*)$").unwrap();
 
         match file {
             Ok(file) => {
-                for (id, line) in io::BufReader::new(file).lines().enumerate() {
+                let mut stack = Vec::new();
+                let mut cur_indent = 0;
+
+                for (i, line) in io::BufReader::new(file).lines().enumerate() {
                     let line = line.unwrap();
-                    if let Some(caps) = re_todo.captures(&line) {
-                        self.todos
-                            .add_item(Item::new(caps[1].to_string(), Local::now()));
-                    } else if let Some(caps) = re_done.captures(&line) {
-                        self.dones.add_item(Item::new(
-                            caps[2].to_string(),
-                            caps[1].parse::<DateTime<Local>>().unwrap(),
-                        ));
+                    let parent: Option<usize>;
+
+                    if let Some(m) = re_indent.captures(&line) {
+                        let indent = m[1].len() / 4;
+                        match indent.cmp(&cur_indent) {
+                            Ordering::Less => {
+                                (0..(cur_indent - indent + 1)).map(|_| stack.pop()).last();
+                                cur_indent = indent;
+                            }
+                            Ordering::Equal => drop(stack.pop()),
+                            Ordering::Greater => cur_indent = indent,
+                        }
+                        parent = stack.last().copied();
+                        stack.push(i);
                     } else {
-                        panic!("[ERROR]: {}:{}: invalid format", file_path, id + 1);
+                        panic!("[ERROR]: {}:{}: invalid indentation", file_path, i + 1);
+                    }
+
+                    if let Some(c) = re_todo.captures(&line) {
+                        self.todos
+                            .add_item(Item::new(c[2].to_string(), Local::now(), parent));
+                        if let Some(parent) = parent {
+                            self.todos.add_child_to(parent, i);
+                        }
+                    } else if let Some(c) = re_done.captures(&line) {
+                        let date = DateTime::parse_from_str(&c[2], "%Y-%m-%d %H:%M %z").expect(
+                            &format!("[ERROR]: {}:{}: invalid date format", file_path, i + 1),
+                        );
+                        self.dones.add_item(Item::new(
+                            c[3].to_string(),
+                            <DateTime<Local>>::from(date),
+                            parent,
+                        ));
+                        if let Some(parent) = parent {
+                            self.dones.add_child_to(parent, i);
+                        }
+                    } else {
+                        panic!("[ERROR]: {}:{}: invalid format", file_path, i + 1);
                     }
                 }
                 self.message = format!("Loaded '{file_path}' file.")
@@ -345,11 +466,14 @@ impl TodoApp {
 
     pub fn save(&self, file_path: &str) -> std::io::Result<()> {
         let mut file = File::create(file_path)?;
-        for todo in self.todos.list.iter() {
-            writeln!(file, "TODO(): {}", todo.text).unwrap();
+        for (todo, i) in self.iter_todos() {
+            let indent = "    ".repeat(i);
+            writeln!(file, "{indent}TODO(): {}", todo.text).unwrap();
         }
-        for done in self.dones.list.iter() {
-            writeln!(file, "DONE({}): {}", done.date, done.text).unwrap();
+        for (done, i) in self.iter_dones() {
+            let indent = "    ".repeat(i);
+            let date = done.date.format("%Y-%m-%d %H:%M %z");
+            writeln!(file, "{indent}DONE({date}): {}", done.text).unwrap();
         }
         Ok(())
     }
@@ -546,14 +670,21 @@ impl TodoApp {
         match self.panel {
             Panel::Todo => {
                 self.todos.record_state();
-                self.operation_stack
-                    .push(Operation::new(Action::Insert, Panel::Todo));
-                self.todos.insert();
-                editing_cursor = Some(0);
+                match self.todos.insert() {
+                    Ok(()) => {
+                        self.operation_stack
+                            .push(Operation::new(Action::Insert, Panel::Todo));
+                        editing_cursor = Some(0);
 
-                self.operation_stack
-                    .push(Operation::new(Action::InEdit, self.panel));
-                self.message.push_str("What needs to be done?");
+                        self.operation_stack
+                            .push(Operation::new(Action::InEdit, self.panel));
+                        self.message.push_str("What needs to be done?");
+                    }
+                    Err(err) => {
+                        self.message.push_str(err);
+                        self.todos.revert_state().unwrap();
+                    }
+                }
             }
             Panel::Done => self
                 .message
@@ -568,7 +699,33 @@ impl TodoApp {
             !self.is_in_edit(),
             "append_item() called in already running edit mode."
         );
-        todo!("append_item() not implemented yet.");
+
+        let mut editing_cursor = None;
+
+        match self.panel {
+            Panel::Todo => {
+                self.todos.record_state();
+                match self.todos.append() {
+                    Ok(()) => {
+                        self.operation_stack
+                            .push(Operation::new(Action::Append, Panel::Todo));
+                        editing_cursor = Some(0);
+
+                        self.operation_stack
+                            .push(Operation::new(Action::InEdit, self.panel));
+                        self.message
+                            .push_str("What needs to be done for the current TODO?");
+                    }
+                    Err(err) => {
+                        self.message.push_str(err);
+                        self.todos.revert_state().unwrap();
+                    }
+                }
+            }
+            Panel::Done => self.message.push_str("Can't add sub-tasks for DONE items."),
+        }
+
+        editing_cursor
     }
 
     pub fn edit_item(&mut self) -> Option<usize> {
@@ -580,9 +737,9 @@ impl TodoApp {
         let mut editing_cursor = 0;
 
         if self.panel == Panel::Todo && !self.todos.list.is_empty() {
-            editing_cursor = self.todos.get_item().text.len();
+            editing_cursor = self.todos.get_cur_item().unwrap().text.len();
         } else if self.panel == Panel::Done && !self.dones.list.is_empty() {
-            editing_cursor = self.dones.get_item().text.len();
+            editing_cursor = self.dones.get_cur_item().unwrap().text.len();
         }
 
         if editing_cursor > 0 {
@@ -603,6 +760,8 @@ impl TodoApp {
             self.message.push_str("Editing current item.");
 
             return Some(editing_cursor);
+        } else {
+            self.message.push_str("Nothing to edit.");
         }
         None
     }
@@ -621,7 +780,7 @@ impl TodoApp {
 
     pub fn finish_edit(&mut self) -> bool {
         assert!(
-            self.is_in_edit(),
+            self.is_in_edit() && self.operation_stack.len() >= 2,
             "finish_edit() called without a matching edit_item() or insert_item()"
         );
 
@@ -629,13 +788,26 @@ impl TodoApp {
 
         match self.panel {
             Panel::Todo => {
-                if self.todos.get_item().text.is_empty() {
-                    self.message.push_str("TODO item can't be empty.");
-                    return false;
+                if self.todos.get_cur_item().unwrap().text.is_empty() {
+                    let act = self.operation_stack[self.operation_stack.len() - 2].action;
+                    match act {
+                        Action::Insert | Action::Append => {
+                            self.todos.delete().unwrap();
+                            if act == Action::Append {
+                                self.todos.up();
+                            }
+                            self.operation_stack.pop();
+                        }
+                        Action::Edit => {
+                            self.message.push_str("TODO item can't be empty.");
+                            return false;
+                        }
+                        _ => unreachable!(),
+                    }
                 }
             }
             Panel::Done => {
-                if self.dones.get_item().text.is_empty() {
+                if self.dones.get_cur_item().unwrap().text.is_empty() {
                     self.dones.delete().unwrap();
                 }
             }

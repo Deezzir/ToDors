@@ -1,36 +1,28 @@
-TODO(): Add subtodos
-    TODO(): test for stability
-    TODO(): rework saving and dumping
-    TODO(): rework actions
-        TODO(): moving
-        TODO(): draging
-        TODO(): editing
-            TODO(): test
-                TODO(): test
-                    TODO(): test
-                        TODO(): test
-        TODO(): test
-        TODO(): inserting
-        TODO(): deleting
-        TODO(): unmarking
-        TODO(): test
-            TODO(): test
-            TODO(): test
-                TODO(): test
-                TODO(): test
-                    TODO(): test
-                        TODO(): test
-                TODO(): test
-        TODO(): test
-TODO(): Fix autoresizing
 TODO(): Finish a Rust TODO app
-TODO(): Finish a Game of Life with Rust with GUI(SDL?)
+    TODO(): Add subtodos
+        TODO(): test for stability
+        TODO(): rework saving and dumping
+        TODO(): rework actions
+            TODO(): moving
+            TODO(): draging
+            TODO(): editing
+            TODO(): inserting
+            TODO(): deleting
+            TODO(): unmarking
+    TODO(): Fix autoresizing
+        TODO(): optimize redraw
+        TODO(): clear before adding child
+TODO(): Finish a Game of Life with Rust with GUI
+    TODO(): try different cellular automata
+    TODO(): use SDL
 TODO(): Learn Rust
-DONE(2023-02-03 05:43:33.055269071 -05:00): Add undo option to TODO app
-DONE(2023-02-03 05:43:33.752245741 -05:00): Add date tracking to TODO app
-DONE(2023-02-04 19:05:33.588875 -05:00): Add safechecks for editing mode
-DONE(2023-02-04 19:12:32.253412 -05:00): Add editing option to TODO app
-DONE(2023-02-04 19:17:54.422294 -05:00): Add inserting option to TODO app
-DONE(2023-02-06 13:47:25.683700140 -05:00): Add buffered stdout write
-DONE(2023-02-06 16:00:00.876958453 -05:00): Add autoresizing of the TODO app UI(tree?)
-DONE(2023-02-06 23:09:36.666041 -05:00): Add proper Ctrl+c handling
+    TODO(): unsafe {}
+    TODO(): comprehend borrow checker
+DONE(2023-02-03 05:43 -0500): Add undo option to TODO app
+DONE(2023-02-03 05:43 -0500): Add date tracking to TODO app
+DONE(2023-02-04 19:05 -0500): Add safechecks for editing mode
+DONE(2023-02-04 19:12 -0500): Add editing option to TODO app
+DONE(2023-02-04 19:17 -0500): Add inserting option to TODO app
+DONE(2023-02-06 13:47 -0500): Add buffered stdout write
+DONE(2023-02-06 16:00 -0500): Add autoresizing of the TODO app UI(tree?)
+DONE(2023-02-06 23:09 -0500): Add proper Ctrl+c handling
