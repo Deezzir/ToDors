@@ -1,4 +1,27 @@
 TODO(): Add subtodos
+    TODO(): test for stability
+    TODO(): rework saving and dumping
+    TODO(): rework actions
+        TODO(): moving
+        TODO(): draging
+        TODO(): editing
+            TODO(): test
+                TODO(): test
+                    TODO(): test
+                        TODO(): test
+        TODO(): test
+        TODO(): inserting
+        TODO(): deleting
+        TODO(): unmarking
+        TODO(): test
+            TODO(): test
+            TODO(): test
+                TODO(): test
+                TODO(): test
+                    TODO(): test
+                        TODO(): test
+                TODO(): test
+        TODO(): test
 TODO(): Fix autoresizing
 TODO(): Finish a Rust TODO app
 TODO(): Finish a Game of Life with Rust with GUI(SDL?)
