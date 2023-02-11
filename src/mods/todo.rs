@@ -222,8 +222,12 @@ impl List {
 
         let to_insert: Vec<Item> = self.list.drain(self.cur..self.cur + child_cnt).collect();
         self.list.splice(to_move..to_move, to_insert);
-        self.cur = to_move;
+        if let Some(parent) = parent {
+            self.list[parent].children.retain(|&x| x != self.cur);
+            self.list[parent].children.push(to_move + child_cnt);
+        }
 
+        self.cur = to_move;
         Ok(())
     }
 
@@ -258,8 +262,12 @@ impl List {
 
         let to_insert: Vec<Item> = self.list.drain(self.cur..self.cur + child_cnt).collect();
         self.list.splice(to_move..to_move, to_insert);
-        self.cur = to_move;
+        if let Some(parent) = parent {
+            self.list[parent].children.retain(|&x| x != pier);
+            self.list[parent].children.push(to_move);
+        }
 
+        self.cur = to_move;
         Ok(())
     }
 

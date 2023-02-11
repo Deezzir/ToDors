@@ -201,11 +201,11 @@ fn main() {
                     match char::from_u32(key as u32).unwrap() {
                         'k' | '\u{103}' => app.go_up(),   // 'k' or 'up'
                         'j' | '\u{102}' => app.go_down(), // 'j' or 'down'
+                        'K' | '\u{151}' => app.drag_up(),
+                        'J' | '\u{150}' => app.drag_down(),
                         'g' => app.go_top(),
                         'G' => app.go_bottom(),
                         'h' => app.go_half(),
-                        'K' | '\u{151}' => app.drag_up(),
-                        'J' | '\u{150}' => app.drag_down(),
                         '\n' => app.transfer_item(),
                         'd' => app.delete_item(),
                         'i' => {
@@ -258,5 +258,5 @@ fn main() {
     endwin();
     app.save(&file_path).unwrap();
     println!("[INFO]: Saved to '{file_path}', Bye!");
-    // println!("{app:#?}");
+    println!("{app:#?}");
 }
