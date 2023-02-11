@@ -36,7 +36,7 @@ Author: Iurii Kondrakov <deezzir@gmail.com>
         <u>               ~ Undo last action
         <r>               ~ Edit current item
         <t>               ~ Hide subtasks
-        <H>               ~ Show help
+        <?>               ~ Show help
         <enter>           ~ Transfer current item/Save edited item
         <esc>             ~ Cancel editing
         <tab>             ~ Switch between Switch between 'Todos'/'Dones'
@@ -229,7 +229,7 @@ fn main() {
                         'u' => app.undo(),
                         '\t' => app.toggle_panel(),
                         't' => todo!(),
-                        'H' => todo!(),
+                        '?' => todo!(),
                         'q' => break,
                         _ => {}
                     }

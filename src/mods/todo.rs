@@ -192,6 +192,11 @@ impl List {
         }
 
         if self.cur != 0 && self.list.len() > 1 {
+            if let Some(parent) = self.list[self.cur].parent {
+                if self.cur - 1 == parent {
+                    return Err("Can't move a subtask out from its parent.");
+                }
+            }
             self.list.swap(self.cur, self.cur - 1);
             self.cur -= 1;
             Ok(())
@@ -205,13 +210,24 @@ impl List {
             return Err("Can't drag down. List is empty.");
         }
 
-        if self.cur < self.list.len() - 1 && self.list.len() > 1 {
-            self.list.swap(self.cur, self.cur + 1);
-            self.cur += 1;
-            Ok(())
-        } else {
-            Err("Can't drag down. Item is already at the bottom.")
+        let parent = self.list[self.cur].parent;
+        let pier = self
+            .list
+            .iter()
+            .skip(self.cur + 1)
+            .position(|item| item.parent == parent);
+
+        if parent.is_none() && pier.is_none() {
+            return Err("Can't drag down. Item is already at the bottom.");
+        } else if parent.is_some() && pier.is_none() {
+            return Err("Can't move a subtask out from its parent.");
         }
+        let pier_child_cnt = self.children_cnt(pier.unwrap());
+        let children_cnt = self.children_cnt(self.cur);
+
+        self.list.swap(self.cur, self.cur + 1);
+        self.cur += 1;
+        Ok(())
     }
 
     fn first(&mut self) {
@@ -228,6 +244,20 @@ impl List {
         if !self.list.is_empty() {
             self.cur = self.list.len() - 1;
         }
+    }
+
+    fn children_cnt(&self, parent: usize) -> usize {
+        let mut cnt = 0;
+        if let Some(item) = self.list.get(parent) {
+            if item.children.is_empty() {
+                return 0;
+            }
+
+            for child in item.children.iter() {
+                cnt += 1 + self.children_cnt(*child);
+            }
+        }
+        cnt
     }
 
     fn shift_indices(&mut self, from: usize, by: usize, parent: Option<usize>) {
