@@ -191,18 +191,40 @@ impl List {
             return Err("Can't drag up. List is empty.");
         }
 
-        if self.cur != 0 && self.list.len() > 1 {
-            if let Some(parent) = self.list[self.cur].parent {
-                if self.cur - 1 == parent {
-                    return Err("Can't move a subtask out from its parent.");
-                }
-            }
-            self.list.swap(self.cur, self.cur - 1);
-            self.cur -= 1;
-            Ok(())
-        } else {
-            Err("Can't drag up. Item is already at the top.")
+        let parent = self.list[self.cur].parent;
+        let pier = self.list[..self.cur]
+            .iter()
+            .rposition(|item| item.parent == parent);
+
+        if parent.is_none() && pier.is_none() {
+            return Err("Can't drag up. Item is already at the top.");
+        } else if parent.is_some() && pier.is_none() {
+            return Err("Can't move a subtask out from its parent.");
         }
+
+        let pier = pier.unwrap();
+        let pier_child_cnt = self.children_cnt(pier) + 1;
+        let child_cnt = self.children_cnt(self.cur) + 1;
+        let to_move = self.cur - pier_child_cnt;
+
+        self.shift_indices(
+            self.cur,
+            -1 * pier_child_cnt as isize,
+            Some(self.cur + child_cnt),
+            parent,
+        );
+        self.shift_indices(
+            pier,
+            child_cnt as isize,
+            Some(self.cur),
+            self.list[pier].parent,
+        );
+
+        let to_insert: Vec<Item> = self.list.drain(self.cur..self.cur + child_cnt).collect();
+        self.list.splice(to_move..to_move, to_insert);
+        self.cur = to_move;
+
+        Ok(())
     }
 
     fn drag_down(&mut self) -> Result<(), &'static str> {
@@ -211,10 +233,8 @@ impl List {
         }
 
         let parent = self.list[self.cur].parent;
-        let pier = self
-            .list
+        let pier = self.list[self.cur + 1..]
             .iter()
-            .skip(self.cur + 1)
             .position(|item| item.parent == parent);
 
         if parent.is_none() && pier.is_none() {
@@ -222,11 +242,24 @@ impl List {
         } else if parent.is_some() && pier.is_none() {
             return Err("Can't move a subtask out from its parent.");
         }
-        let pier_child_cnt = self.children_cnt(pier.unwrap());
-        let children_cnt = self.children_cnt(self.cur);
 
-        self.list.swap(self.cur, self.cur + 1);
-        self.cur += 1;
+        let pier = pier.unwrap() + self.cur + 1;
+        let pier_child_cnt = self.children_cnt(pier) + 1;
+        let child_cnt = self.children_cnt(self.cur) + 1;
+        let to_move = self.cur + pier_child_cnt;
+
+        self.shift_indices(self.cur, pier_child_cnt as isize, Some(pier), parent);
+        self.shift_indices(
+            pier,
+            -1 * child_cnt as isize,
+            Some(pier + pier_child_cnt),
+            self.list[pier].parent,
+        );
+
+        let to_insert: Vec<Item> = self.list.drain(self.cur..self.cur + child_cnt).collect();
+        self.list.splice(to_move..to_move, to_insert);
+        self.cur = to_move;
+
         Ok(())
     }
 
@@ -260,15 +293,21 @@ impl List {
         cnt
     }
 
-    fn shift_indices(&mut self, from: usize, by: usize, parent: Option<usize>) {
-        for item in self.list.iter_mut().skip(from) {
+    fn shift_indices(&mut self, from: usize, by: isize, to: Option<usize>, parent: Option<usize>) {
+        let to = to.unwrap_or(self.list.len());
+
+        for item in self.list.iter_mut().skip(from).take(to - from) {
             if item.parent > parent {
                 if let Some(p) = item.parent {
-                    item.parent = Some(p + by);
+                    if p as isize + by >= 0 {
+                        item.parent = Some((p as isize + by) as usize);
+                    }
                 }
             }
             for child_id in item.children.iter_mut() {
-                *child_id += by;
+                if *child_id as isize + by >= 0 {
+                    *child_id = (*child_id as isize + by) as usize;
+                }
             }
         }
     }
@@ -279,7 +318,7 @@ impl List {
             return Err("Can't insert item. Current item is a subtask.");
         }
 
-        self.shift_indices(self.cur, 1, None);
+        self.shift_indices(self.cur, 1, None, None);
         self.list
             .insert(self.cur, Item::new(String::new(), Local::now(), None));
 
@@ -291,7 +330,7 @@ impl List {
             return Err("Can't add subtask item. List is empty.");
         }
 
-        self.shift_indices(self.cur, 1, Some(self.cur));
+        self.shift_indices(self.cur, 1, None, Some(self.cur));
         self.list.insert(
             self.cur + 1,
             Item::new(String::new(), Local::now(), Some(self.cur)),

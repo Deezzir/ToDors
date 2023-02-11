@@ -27,20 +27,20 @@ Author: Iurii Kondrakov <deezzir@gmail.com>
         -h, --help          Show this help message.
 
     Controls:
-        <k/up>, <j/down>  ~ Move the cursor up
-        <K>, <J>          ~ Drag item UP/DOWN
-        <g>, <G>, <h>     ~ Jump to the top/bottom/half of the list
-        <d>               ~ Delete 'Done' item
-        <i>               ~ Insert a new 'Todo' item
-        <a>               ~ Add a subtask to the current 'Todo' item
-        <u>               ~ Undo last action
-        <r>               ~ Edit current item
-        <t>               ~ Hide subtasks
-        <?>               ~ Show help
-        <enter>           ~ Transfer current item/Save edited item
-        <esc>             ~ Cancel editing
-        <tab>             ~ Switch between Switch between 'Todos'/'Dones'
-        <q>, <ctrl-c>     ~ Quit
+        <k/up>, <j/down>                ~ Move the cursor up
+        <K/shift+up>, <J/shift+down>    ~ Drag item UP/DOWN
+        <g>, <G>, <h>                   ~ Jump to the top/bottom/half of the list
+        <d>                             ~ Delete 'Done' item
+        <i>                             ~ Insert a new 'Todo' item
+        <a>                             ~ Add a subtask to the current 'Todo' item
+        <u>                             ~ Undo last action
+        <r>                             ~ Edit current item
+        <t>                             ~ Hide subtasks
+        <?>                             ~ Show help
+        <enter>                         ~ Transfer current item/Save edited item
+        <esc>                           ~ Cancel editing
+        <tab>                           ~ Switch between Switch between 'Todos'/'Dones'
+        <q>, <ctrl+c>                   ~ Quit
 "#;
 
 const FILE_PATH: &str = "TODO.list";
@@ -204,8 +204,8 @@ fn main() {
                         'g' => app.go_top(),
                         'G' => app.go_bottom(),
                         'h' => app.go_half(),
-                        'K' => app.drag_up(),
-                        'J' => app.drag_down(),
+                        'K' | '\u{151}' => app.drag_up(),
+                        'J' | '\u{150}' => app.drag_down(),
                         '\n' => app.transfer_item(),
                         'd' => app.delete_item(),
                         'i' => {
