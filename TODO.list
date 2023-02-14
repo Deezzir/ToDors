@@ -19,6 +19,7 @@ TODO(): Finish a Game of Life with Rust with GUI
 TODO(): Learn Rust
     TODO(): unsafe { lol }
     TODO(): comprehend borrow checker
+<--->
 DONE(2023-02-03 05:43 -0500): Add undo option to TODO app
 DONE(2023-02-03 05:43 -0500): Add date tracking to TODO app
 DONE(2023-02-04 19:05 -0500): Add safechecks for editing mode

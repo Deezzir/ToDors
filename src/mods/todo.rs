@@ -2,12 +2,16 @@ use std::cmp::{min, Ordering};
 use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead, Write};
+use std::process::exit;
+use std::ptr::eq;
 
 use chrono::{DateTime, Local};
 
 use ncurses::constants;
 use regex::Regex;
 // const MAX_STACK_SIZE: usize = 20;
+const SEP: &str = "<--->";
+const DATE_FMT: &str = "%Y-%m-%d %H:%M %z";
 
 #[derive(PartialEq, Clone, Copy, Debug)]
 enum Panel {
@@ -69,17 +73,17 @@ pub struct Item {
     date: DateTime<Local>,
     parent: Option<usize>,
     children: Vec<usize>,
-    dones_num: usize,
+    act_cnt: usize,
 }
 
 impl Item {
-    fn new(text: String, date: DateTime<Local>, parent: Option<usize>) -> Self {
+    fn new(text: String, date: DateTime<Local>, parent: Option<usize>, act_cnt: usize) -> Self {
         Self {
             text,
             date,
             parent,
             children: Vec::new(),
-            dones_num: 0,
+            act_cnt,
         }
     }
 
@@ -91,7 +95,11 @@ impl Item {
         self.date.format("%y-%m-%d").to_string()
     }
 
-    pub fn trim_text(&mut self) {
+    pub fn is_active(&self) -> bool {
+        self.act_cnt > 0
+    }
+
+    fn trim_text(&mut self) {
         self.text = self.text.trim().to_string();
     }
 }
@@ -143,10 +151,12 @@ impl List {
         self.list.push(item);
     }
 
-    fn add_child_to(&mut self, parent: usize, child: usize) {
+    fn add_child_to(&mut self, parent: usize, child: usize, inc: bool) {
         if let Some(item) = self.list.get_mut(parent) {
             item.children.push(child);
-            item.dones_num += 1;
+            if inc {
+                item.act_cnt += 1;
+            }
         }
     }
 
@@ -209,7 +219,7 @@ impl List {
 
         self.shift_indices(
             self.cur,
-            -1 * pier_child_cnt as isize,
+            -(pier_child_cnt as isize),
             Some(self.cur + child_cnt),
             parent,
         );
@@ -255,7 +265,7 @@ impl List {
         self.shift_indices(self.cur, pier_child_cnt as isize, Some(pier), parent);
         self.shift_indices(
             pier,
-            -1 * child_cnt as isize,
+            -(child_cnt as isize),
             Some(pier + pier_child_cnt),
             self.list[pier].parent,
         );
@@ -328,7 +338,7 @@ impl List {
 
         self.shift_indices(self.cur, 1, None, None);
         self.list
-            .insert(self.cur, Item::new(String::new(), Local::now(), None));
+            .insert(self.cur, Item::new(String::new(), Local::now(), None, 1));
 
         Ok(())
     }
@@ -341,42 +351,77 @@ impl List {
         self.shift_indices(self.cur, 1, None, Some(self.cur));
         self.list.insert(
             self.cur + 1,
-            Item::new(String::new(), Local::now(), Some(self.cur)),
+            Item::new(String::new(), Local::now(), Some(self.cur), 1),
         );
         self.list[self.cur].children.push(self.cur + 1);
-        self.list[self.cur].dones_num += 1;
+        self.unmark_parents(Some(self.cur));
         self.cur += 1;
 
         Ok(())
     }
 
-    fn delete(&mut self) -> Result<(), &'static str> {
-        if self.cur < self.list.len() {
-            self.list.remove(self.cur);
-            if !self.list.is_empty() {
-                self.cur = min(self.cur, self.list.len() - 1);
-            } else {
-                self.cur = 0;
+    fn unmark_parents(&mut self, parent: Option<usize>) {
+        let mut parent = parent;
+        while let Some(p) = parent {
+            if self.list[p].act_cnt >= 1 {
+                self.list[p].act_cnt += 1;
+                break;
+            } else if self.list[p].act_cnt == 0 {
+                self.list[p].act_cnt += 2;
             }
-            Ok(())
-        } else {
-            Err("Can't delete item. List is empty.")
+            parent = self.list[p].parent;
         }
     }
 
-    fn transfer(&mut self, rhs: &mut Self) -> Result<(), &'static str> {
-        if self.cur < self.list.len() {
-            self.list[self.cur].date = Local::now();
-            rhs.list.push(self.list.remove(self.cur));
-            if !self.list.is_empty() {
-                self.cur = min(self.cur, self.list.len() - 1);
-            } else {
-                self.cur = 0;
-            }
-            Ok(())
-        } else {
-            Err("Can't move item. List is empty.")
+    fn delete(&mut self) -> Result<(), &'static str> {
+        todo!();
+        // if self.cur < self.list.len() {
+        //     self.list.remove(self.cur);
+        //     if !self.list.is_empty() {
+        //         self.cur = min(self.cur, self.list.len() - 1);
+        //     } else {
+        //         self.cur = 0;
+        //     }
+        //     Ok(())
+        // } else {
+        //     Err("Can't delete item. List is empty.")
+        // }
+    }
+
+    fn mark(&mut self) -> Result<(), &'static str> {
+        if self.list.is_empty() {
+            return Err("Can't mark item. List is empty.");
+        } else if self.list[self.cur].act_cnt > 1 {
+            return Err("Can't mark item. Item has active subtasks.");
         }
+
+        let parent = self.list[self.cur].parent;
+        if self.list[self.cur].act_cnt == 1 {
+            if let Some(p) = parent {
+                self.list[p].act_cnt -= 1;
+            }
+            self.list[self.cur].act_cnt = 0;
+        } else if self.list[self.cur].act_cnt == 0 {
+            self.unmark_parents(parent);
+            self.list[self.cur].act_cnt = 1;
+        }
+
+        Ok(())
+    }
+
+    fn _transfer(&mut self) {
+        // if self.cur < self.list.len() {
+        //     self.list[self.cur].date = Local::now();
+        //     rhs.list.push(self.list.remove(self.cur));
+        //     if !self.list.is_empty() {
+        //         self.cur = min(self.cur, self.list.len() - 1);
+        //     } else {
+        //         self.cur = 0;
+        //     }
+        //     Ok(())
+        // } else {
+        //     Err("Can't move item. List is empty.")
+        // }
     }
 
     fn edit(&mut self, cur: &mut usize, key: i32) {
@@ -503,18 +548,30 @@ impl TodoApp {
 
     pub fn parse(&mut self, file_path: &str) {
         let file = File::open(file_path);
+
+        let sep = SEP;
         let re_indent = Regex::new(r"^((\s{4})*)\S+").unwrap();
-        let re_todo = Regex::new(r"^(\s{4})*TODO\(\): (.*)$").unwrap();
-        let re_done = Regex::new(r"^(\s{4})*DONE\((.*)\): (.*)$").unwrap();
+        let mut panel = Panel::Todo;
+        let mut stack = Vec::new();
+        let mut cur_indent = 0;
 
         match file {
             Ok(file) => {
-                let mut stack = Vec::new();
-                let mut cur_indent = 0;
-
                 for (i, line) in io::BufReader::new(file).lines().enumerate() {
                     let line = line.unwrap();
                     let parent: Option<usize>;
+
+                    if line == sep {
+                        if panel == Panel::Todo {
+                            cur_indent = 0;
+                            stack.clear();
+                            panel = Panel::Done;
+                        } else {
+                            eprintln!("[ERROR]: {}:{}: invalid separator", file_path, i + 1);
+                            exit(1);
+                        }
+                        continue;
+                    }
 
                     if let Some(m) = re_indent.captures(&line) {
                         let indent = m[1].len() / 4;
@@ -529,30 +586,35 @@ impl TodoApp {
                         parent = stack.last().copied();
                         stack.push(i);
                     } else {
-                        panic!("[ERROR]: {}:{}: invalid indentation", file_path, i + 1);
+                        eprintln!("[ERROR]: {}:{}: invalid indentation", file_path, i + 1);
+                        exit(1);
                     }
 
-                    if let Some(c) = re_todo.captures(&line) {
-                        self.todos
-                            .add_item(Item::new(c[2].to_string(), Local::now(), parent));
-                        if let Some(parent) = parent {
-                            self.todos.add_child_to(parent, i);
-                        }
-                    } else if let Some(c) = re_done.captures(&line) {
-                        let date = DateTime::parse_from_str(&c[2], "%Y-%m-%d %H:%M %z")
-                            .unwrap_or_else(|_| {
-                                panic!("[ERROR]: {}:{}: invalid date format", file_path, i + 1)
-                            });
-                        self.dones.add_item(Item::new(
-                            c[3].to_string(),
-                            <DateTime<Local>>::from(date),
-                            parent,
-                        ));
-                        if let Some(parent) = parent {
-                            self.dones.add_child_to(parent, i);
-                        }
-                    } else {
-                        panic!("[ERROR]: {}:{}: invalid format", file_path, i + 1);
+                    match panel {
+                        Panel::Todo => match self.parse_todo(&line, parent) {
+                            Err(e) => {
+                                eprintln!("[ERROR]: {}:{}: {}", file_path, i + 1, e);
+                                exit(1);
+                            }
+                            Ok(todo) => {
+                                self.todos.add_item(todo);
+                                if let Some(parent) = parent {
+                                    self.todos.add_child_to(parent, i, true);
+                                }
+                            }
+                        },
+                        Panel::Done => match self.parse_done(&line, parent) {
+                            Err(e) => {
+                                eprintln!("[ERROR]: {}:{}: {}", file_path, i + 1, e);
+                                exit(1);
+                            }
+                            Ok(done) => {
+                                self.dones.add_item(done);
+                                if let Some(parent) = parent {
+                                    self.dones.add_child_to(parent, i, false);
+                                }
+                            }
+                        },
                     }
                 }
                 self.message = format!("Loaded '{file_path}' file.")
@@ -568,17 +630,48 @@ impl TodoApp {
         }
     }
 
+    fn parse_todo(&mut self, line: &str, parent: Option<usize>) -> Result<Item, &'static str> {
+        let re_todo = Regex::new(r"^(\s{4})*TODO\(\): (.*)$").unwrap();
+
+        if let Some(c) = re_todo.captures(line) {
+            Ok(Item::new(c[2].trim().to_string(), Local::now(), parent, 1))
+        } else {
+            Err("invalid format for TODO item")
+        }
+    }
+
+    fn parse_done(&mut self, line: &str, parent: Option<usize>) -> Result<Item, &str> {
+        let re_done = Regex::new(r"^(\s{4})*DONE\((.*)\): (.*)$").unwrap();
+
+        if let Some(c) = re_done.captures(line) {
+            let date = DateTime::parse_from_str(&c[2], DATE_FMT);
+            if let Ok(d) = date {
+                Ok(Item::new(c[3].trim().to_string(), d.into(), parent, 0))
+            } else {
+                Err("invalid date format for DONE item")
+            }
+        } else {
+            Err("invalid format for DONE item")
+        }
+    }
+
     pub fn save(&self, file_path: &str) -> std::io::Result<()> {
+        let sep = SEP;
+
         let mut file = File::create(file_path)?;
-        for (todo, i) in self.iter_todos() {
-            let indent = "    ".repeat(i);
+        for (todo, level) in self.iter_todos() {
+            let indent = "    ".repeat(level);
             writeln!(file, "{indent}TODO(): {}", todo.text).unwrap();
         }
-        for (done, i) in self.iter_dones() {
-            let indent = "    ".repeat(i);
-            let date = done.date.format("%Y-%m-%d %H:%M %z");
+
+        writeln!(file, "{sep}").unwrap();
+
+        for (done, level) in self.iter_dones() {
+            let indent = "    ".repeat(level);
+            let date = done.date.format(DATE_FMT);
             writeln!(file, "{indent}DONE({date}): {}", done.text).unwrap();
         }
+
         Ok(())
     }
 
@@ -693,11 +786,11 @@ impl TodoApp {
         assert!(!self.is_in_edit(), "Can't move item while in edit mode");
 
         self.todos.record_state();
-        self.dones.record_state();
+        // self.dones.record_state();
 
         let result = match self.panel {
-            Panel::Todo => self.todos.transfer(&mut self.dones),
-            Panel::Done => self.dones.transfer(&mut self.todos),
+            Panel::Todo => self.todos.mark(),
+            Panel::Done => self.dones.mark(),
         };
         match result {
             Ok(()) => match self.panel {
@@ -715,7 +808,7 @@ impl TodoApp {
             Err(err) => {
                 self.message.push_str(err);
                 self.todos.revert_state().unwrap();
-                self.dones.revert_state().unwrap();
+                // self.dones.revert_state().unwrap();
             }
         };
     }
@@ -752,8 +845,8 @@ impl TodoApp {
             Some(op) => {
                 match op.action {
                     Action::Transfer => {
-                        self.dones.revert_state().unwrap();
                         self.todos.revert_state().unwrap();
+                        // self.dones.revert_state().unwrap();
                     }
                     _ => match op.panel {
                         Panel::Todo => {
@@ -939,11 +1032,10 @@ impl TodoApp {
     }
 
     fn is_in_edit(&self) -> bool {
-        let last_op = self.operation_stack.last();
-        if last_op.is_none() {
-            false
+        if let Some(op) = self.operation_stack.last() {
+            op.action == Action::InEdit
         } else {
-            last_op.unwrap().action == Action::InEdit
+            false
         }
     }
 }
