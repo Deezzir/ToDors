@@ -33,6 +33,7 @@ enum Action {
     DragUp,
     DragDown,
     Transfer,
+    Mark,
     Insert,
     Append,
     Edit,
@@ -47,6 +48,7 @@ impl fmt::Display for Action {
             Action::DragDown => write!(f, "Drag down"),
             Action::Transfer => write!(f, "Transfer"),
             Action::Insert => write!(f, "Insert"),
+            Action::Mark => write!(f, "Mark"),
             Action::Append => write!(f, "Append"),
             Action::Edit => write!(f, "Edit"),
             Action::InEdit => write!(f, ""),
@@ -98,6 +100,10 @@ impl Item {
         self.act_cnt > 0
     }
 
+    pub fn has_children(&self) -> bool {
+        !self.children.is_empty()
+    }
+
     fn trim_text(&mut self) {
         self.text = self.text.trim().to_string();
     }
@@ -113,6 +119,7 @@ struct List {
 pub struct ListIter<'a> {
     obj: &'a List,
     cur: usize,
+    skip_children: bool,
 }
 
 impl<'a> Iterator for ListIter<'a> {
@@ -122,6 +129,10 @@ impl<'a> Iterator for ListIter<'a> {
         if self.cur < self.obj.list.len() {
             let item = &self.obj.list[self.cur];
             self.cur += 1;
+
+            if self.skip_children && item.parent.is_some() {
+                return self.next();
+            }
 
             let mut level = 0;
             let mut parent = item.parent;
@@ -477,6 +488,7 @@ impl List {
 pub struct TodoApp {
     message: String,
     panel: Panel,
+    hide_subs: bool,
     operation_stack: Vec<Operation>,
     todos: List,
     dones: List,
@@ -487,6 +499,7 @@ impl TodoApp {
         Self {
             message: String::new(),
             panel: Panel::Todo,
+            hide_subs: false,
             operation_stack: Vec::new(),
             todos: List::new(),
             dones: List::new(),
@@ -495,6 +508,10 @@ impl TodoApp {
 
     pub fn is_in_todo_panel(&self) -> bool {
         self.panel == Panel::Todo
+    }
+
+    pub fn is_subs_toggled(&self) -> bool {
+        self.hide_subs
     }
 
     pub fn is_in_done_panel(&self) -> bool {
@@ -517,6 +534,7 @@ impl TodoApp {
         ListIter {
             obj: &self.todos,
             cur: 0,
+            skip_children: self.hide_subs,
         }
     }
 
@@ -532,6 +550,7 @@ impl TodoApp {
         ListIter {
             obj: &self.dones,
             cur: 0,
+            skip_children: self.hide_subs,
         }
     }
 
@@ -661,8 +680,9 @@ impl TodoApp {
         }
     }
 
-    pub fn save(&self, file_path: &str) -> std::io::Result<()> {
+    pub fn save(&mut self, file_path: &str) -> std::io::Result<()> {
         let sep = SEP;
+        self.hide_subs = false;
 
         let mut file = File::create(file_path)?;
         for (todo, level) in self.iter_todos() {
@@ -684,6 +704,11 @@ impl TodoApp {
     pub fn toggle_panel(&mut self) {
         assert!(!self.is_in_edit(), "Can't toggle panel while in edit mode.");
         self.panel = self.panel.togle();
+    }
+
+    pub fn toggle_subtasks(&mut self) {
+        assert!(!self.is_in_edit(), "Can't toggle hide while in edit mode.");
+        self.hide_subs = !self.hide_subs;
     }
 
     pub fn go_up(&mut self) {
@@ -802,12 +827,12 @@ impl TodoApp {
             Ok(()) => match self.panel {
                 Panel::Todo => {
                     self.operation_stack
-                        .push(Operation::new(Action::Transfer, Panel::Todo));
+                        .push(Operation::new(Action::Mark, Panel::Todo));
                     self.message.push_str("Done! Great job!");
                 }
                 Panel::Done => {
                     self.operation_stack
-                        .push(Operation::new(Action::Transfer, Panel::Done));
+                        .push(Operation::new(Action::Mark, Panel::Done));
                     self.message.push_str("Not done yet? Keep going!")
                 }
             },

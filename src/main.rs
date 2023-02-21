@@ -27,17 +27,17 @@ Author: Iurii Kondrakov <deezzir@gmail.com>
         -h, --help          Show this help message.
 
     Controls:
-        <k/up>, <j/down>                ~ Move the cursor up
+        <k/up>, <j/down>                ~ Move the cursor UP/DOWN
         <K/shift+up>, <J/shift+down>    ~ Drag item UP/DOWN
-        <g>, <G>, <h>                   ~ Jump to the top/bottom/half of the list
-        <d>                             ~ Delete 'Done' item
+        <g>, <G>, <h>                   ~ Jump to the TOP/BOTTOM/HALF of the list
+        <d>                             ~ Delete 'Done' item/subtask
         <i>                             ~ Insert a new 'Todo' item
         <a>                             ~ Add a subtask to the current 'Todo' item
         <u>                             ~ Undo last action
         <r>                             ~ Edit current item
         <t>                             ~ Hide subtasks
         <?>                             ~ Show help
-        <enter>                         ~ Transfer current item/Save edited item
+        <enter>                         ~ Mark current item/Save edited item
         <esc>                           ~ Cancel editing
         <tab>                           ~ Switch between Switch between 'Todos'/'Dones'
         <q>, <ctrl+c>                   ~ Quit
@@ -45,16 +45,14 @@ Author: Iurii Kondrakov <deezzir@gmail.com>
 
 const FILE_PATH: &str = "TODO.list";
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 enum Mode {
     Edit,
     Normal,
 }
 
-#[allow(dead_code)]
 enum Display {
-    All(Mode),
-    Hide(Mode),
+    App,
     Help,
 }
 
@@ -73,8 +71,10 @@ fn main() {
     let mut term_size = Vec2::new(0, 0);
     let mut timeout = 0;
     let mut mode: Mode = Mode::Normal;
-    let mut app: TodoApp = TodoApp::new();
+    let mut disp: Display = Display::App;
+
     let mut ui = UI::new();
+    let mut app: TodoApp = TodoApp::new();
     app.parse(&file_path);
 
     ncurses_init();
@@ -121,81 +121,10 @@ fn main() {
                 ui.hl();
                 ui.br();
 
-                ui.begin_layout(LayoutKind::Horz);
-                {
-                    ui.begin_layout(LayoutKind::Vert);
-                    {
-                        if app.is_in_todo_panel() {
-                            ui.label_styled("[TODO]", HIGHLIGHT_PAIR, None);
-                        } else {
-                            ui.label_styled(" TODO ", UNSELECTED_PAIR, None);
-                        }
-                        ui.hl();
-
-                        for (todo, level) in app.iter_todos() {
-                            let indent = "    ".repeat(level);
-                            let prefix = if todo.is_active() { "[ ] " } else { "[X] " };
-                            let text = todo.get_text();
-                            let _date = todo.get_date();
-
-                            if app.is_cur_todo(todo) && app.is_in_todo_panel() {
-                                if mode == Mode::Edit {
-                                    ui.edit_label(
-                                        text,
-                                        editing_cursor,
-                                        format!("{indent}{prefix}"),
-                                    );
-                                } else {
-                                    ui.label_styled(
-                                        &format!("{indent}{prefix}{text}"),
-                                        SELECTED_PAIR,
-                                        None,
-                                    );
-                                }
-                            } else {
-                                ui.label(&format!("{indent}{prefix}{text}"));
-                            }
-                        }
-                    }
-                    ui.end_layout();
-
-                    ui.begin_layout(LayoutKind::Vert);
-                    {
-                        if app.is_in_done_panel() {
-                            ui.label_styled("[DONE]", HIGHLIGHT_PAIR, None);
-                        } else {
-                            ui.label_styled(" DONE ", UNSELECTED_PAIR, None);
-                        }
-                        ui.hl();
-
-                        for (done, level) in app.iter_dones() {
-                            let indent = "    ".repeat(level);
-                            let prefix = if !done.is_active() { "[X]" } else { panic!() };
-                            let text = done.get_text();
-                            let date = done.get_date();
-
-                            if app.is_cur_done(done) && app.is_in_done_panel() {
-                                if mode == Mode::Edit {
-                                    ui.edit_label(
-                                        text,
-                                        editing_cursor,
-                                        format!("{indent}{prefix}"),
-                                    );
-                                } else {
-                                    ui.label_styled(
-                                        &format!("{prefix} ({date}) {text}"),
-                                        SELECTED_PAIR,
-                                        None,
-                                    );
-                                }
-                            } else {
-                                ui.label(&format!("{prefix}|{date}| {text}"));
-                            }
-                        }
-                    }
-                    ui.end_layout();
+                match disp {
+                    Display::App => display_app(&mut ui, &mut app, mode, editing_cursor),
+                    Display::Help => display_help(&mut ui),
                 }
-                ui.end_layout();
             }
             ui.end();
             timeout = TIMEOUT;
@@ -204,59 +133,68 @@ fn main() {
         refresh();
         let key = getch();
         if key != ERR {
-            match mode {
-                Mode::Normal => {
-                    app.clear_message();
-                    match char::from_u32(key as u32).unwrap() {
-                        'k' | '\u{103}' => app.go_up(),     // 'k' or 'up'
-                        'j' | '\u{102}' => app.go_down(),   // 'j' or 'down'
-                        'K' | '\u{151}' => app.drag_up(),   // 'K' or 'shift+up'
-                        'J' | '\u{150}' => app.drag_down(), // 'J' or 'shift+down'
-                        'g' => app.go_top(),
-                        'G' => app.go_bottom(),
-                        'h' => app.go_half(),
-                        '\n' => app.mark_item(),
-                        'd' => app.delete_item(),
-                        'u' => app.undo(),
-                        '\t' => app.toggle_panel(),
-                        't' => todo!(),
-                        '?' => todo!(),
-                        'i' => {
-                            if let Some(cur) = app.insert_item() {
-                                editing_cursor = cur;
-                                mode = Mode::Edit;
+            match disp {
+                Display::App => {
+                    match mode {
+                        Mode::Normal => {
+                            app.clear_message();
+                            match char::from_u32(key as u32).unwrap() {
+                                'k' | '\u{103}' => app.go_up(),     // 'k' or 'up'
+                                'j' | '\u{102}' => app.go_down(),   // 'j' or 'down'
+                                'K' | '\u{151}' => app.drag_up(),   // 'K' or 'shift+up'
+                                'J' | '\u{150}' => app.drag_down(), // 'J' or 'shift+down'
+                                'g' => app.go_top(),
+                                'G' => app.go_bottom(),
+                                'h' => app.go_half(),
+                                '\n' => app.mark_item(),
+                                'd' => app.delete_item(),
+                                'u' => app.undo(),
+                                '\t' => app.toggle_panel(),
+                                't' => app.toggle_subtasks(),
+                                '?' => disp = Display::Help,
+                                'i' => {
+                                    if let Some(cur) = app.insert_item() {
+                                        editing_cursor = cur;
+                                        mode = Mode::Edit;
+                                    }
+                                }
+                                'a' => {
+                                    if let Some(cur) = app.append_item() {
+                                        editing_cursor = cur;
+                                        mode = Mode::Edit;
+                                    }
+                                }
+                                'r' => {
+                                    if let Some(cur) = app.edit_item() {
+                                        editing_cursor = cur;
+                                        mode = Mode::Edit;
+                                    }
+                                }
+                                'q' => break,
+                                _ => {}
                             }
                         }
-                        'a' => {
-                            if let Some(cur) = app.append_item() {
-                                editing_cursor = cur;
-                                mode = Mode::Edit;
+                        Mode::Edit => {
+                            match key as u8 as char {
+                                '\n' | '\u{1b}' => {
+                                    // Enter or Esc
+                                    mode = if app.finish_edit() {
+                                        editing_cursor = 0;
+                                        Mode::Normal
+                                    } else {
+                                        Mode::Edit
+                                    };
+                                }
+                                _ => app.edit_item_with(&mut editing_cursor, key),
                             }
                         }
-                        'r' => {
-                            if let Some(cur) = app.edit_item() {
-                                editing_cursor = cur;
-                                mode = Mode::Edit;
-                            }
-                        }
-                        'q' => break,
-                        _ => {}
                     }
                 }
-                Mode::Edit => {
-                    match key as u8 as char {
-                        '\n' | '\u{1b}' => {
-                            // Enter or Esc
-                            mode = if app.finish_edit() {
-                                editing_cursor = 0;
-                                Mode::Normal
-                            } else {
-                                Mode::Edit
-                            };
-                        }
-                        _ => app.edit_item_with(&mut editing_cursor, key),
-                    }
-                }
+                Display::Help => match char::from_u32(key as u32).unwrap() {
+                    ' ' => disp = Display::App,
+                    'q' => break,
+                    _ => {}
+                },
             }
             timeout = 0;
         } else {
@@ -269,4 +207,125 @@ fn main() {
 
     println!("[INFO]: Saved to '{file_path}', Bye!");
     // println!("{app:#?}");
+}
+
+fn display_app(ui: &mut UI, app: &mut TodoApp, mode: Mode, editing_cursor: usize) {
+    ui.begin_layout(LayoutKind::Horz);
+    {
+        ui.begin_layout(LayoutKind::Vert);
+        {
+            if app.is_in_todo_panel() {
+                ui.label_styled("[TODO]", HIGHLIGHT_PAIR, None);
+            } else {
+                ui.label_styled(" TODO ", UNSELECTED_PAIR, None);
+            }
+            ui.hl();
+
+            for (todo, level) in app.iter_todos() {
+                let indent = "    ".repeat(level);
+                let prefix = if todo.is_active() { "[ ]" } else { "[X]" };
+                let text = todo.get_text();
+                let _date = todo.get_date();
+
+                if app.is_cur_todo(todo) && app.is_in_todo_panel() {
+                    if mode == Mode::Edit {
+                        ui.edit_label(text, editing_cursor, format!("{indent}{prefix}"));
+                    } else {
+                        ui.label_styled(&format!("{indent}{prefix}{text}"), SELECTED_PAIR, None);
+                    }
+                } else {
+                    ui.label(&format!("{indent}{prefix}{text}"));
+                }
+            }
+        }
+        ui.end_layout();
+
+        ui.begin_layout(LayoutKind::Vert);
+        {
+            if app.is_in_done_panel() {
+                ui.label_styled("[DONE]", HIGHLIGHT_PAIR, None);
+            } else {
+                ui.label_styled(" DONE ", UNSELECTED_PAIR, None);
+            }
+            ui.hl();
+
+            for (done, level) in app.iter_dones() {
+                let indent = "    ".repeat(level);
+                let prefix = if !done.is_active() { "[X]" } else { panic!() };
+                let text = done.get_text();
+                let date = done.get_date();
+
+                if app.is_cur_done(done) && app.is_in_done_panel() {
+                    if mode == Mode::Edit {
+                        ui.edit_label(text, editing_cursor, format!("{indent}{prefix}"));
+                    } else {
+                        ui.label_styled(&format!("{prefix} ({date}) {text}"), SELECTED_PAIR, None);
+                    }
+                } else {
+                    ui.label(&format!("{prefix}|{date}| {text}"));
+                }
+            }
+        }
+        ui.end_layout();
+    }
+    ui.end_layout();
+}
+
+fn display_help(ui: &mut UI) {
+    ui.label_styled("CONTROLS", HIGHLIGHT_PAIR, None);
+    ui.hl();
+
+    ui.begin_layout(LayoutKind::Horz);
+    {
+        ui.begin_layout(LayoutKind::Vert);
+        {
+            ui.label_styled("k/↑, j/↓", UNSELECTED_PAIR, None);
+            ui.label("K/shift+↑, J/shift+↓");
+            ui.label_styled("g, G, h", UNSELECTED_PAIR, None);
+            ui.label("d");
+            ui.label_styled("i", UNSELECTED_PAIR, None);
+            ui.label("a");
+            ui.label_styled("u", UNSELECTED_PAIR, None);
+            ui.label("r");
+            ui.label_styled("t", UNSELECTED_PAIR, None);
+            ui.label("?");
+            ui.label_styled("enter", UNSELECTED_PAIR, None);
+            ui.label("esc");
+            ui.label_styled("tab", UNSELECTED_PAIR, None);
+            ui.label("q/ctrl+c");
+        }
+        ui.end_layout();
+
+        ui.begin_layout(LayoutKind::Vert);
+        {
+            ui.label_styled("Move the cursor UP/DOWN", UNSELECTED_PAIR, None);
+            ui.label("Drag item UP/DOWN");
+            ui.label_styled(
+                "Jump to the TOP/BOTTOM/HALF of the list",
+                UNSELECTED_PAIR,
+                None,
+            );
+            ui.label("Delete 'Done' item/subtask");
+            ui.label_styled("Insert a new 'Todo' item", UNSELECTED_PAIR, None);
+            ui.label("Add a subtask to the current 'Todo' item");
+            ui.label_styled("Undo last action", UNSELECTED_PAIR, None);
+            ui.label("Edit current item");
+            ui.label_styled("Hide subtasks", UNSELECTED_PAIR, None);
+            ui.label("Show this help");
+            ui.label_styled("Mark current item/Save edited item", UNSELECTED_PAIR, None);
+            ui.label("Cancel editing/inserting");
+            ui.label_styled(
+                "Switch between Switch between 'Todos'/'Dones'",
+                UNSELECTED_PAIR,
+                None,
+            );
+            ui.label("Quit");
+        }
+        ui.end_layout();
+    }
+    ui.end_layout();
+
+    ui.br();
+    ui.hl();
+    ui.label("Press Space to return...");
 }
