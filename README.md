@@ -7,7 +7,7 @@ A terminal based Todo list manager written in Rust. My first Rust project.
 ## Quick Start
 
 ```bash
-cargo run
+cargo run --release
 ```
 
 ## Controls
@@ -22,6 +22,8 @@ cargo run
 | <kbd>a</kbd>                                             | Add subtask to current 'Todo' item   |
 | <kbd>u</kbd>                                             | Undo last action                     |
 | <kbd>r</kbd>                                             | Edit current item                    |
+| <kbd>t</kbd>                                             | Hide subtasks                        |
+| <kbd>?</kbd>                                             | Show help                            |
 | <kbd>ENTER</kbd>                                         | Transfer element/Save edited item    |
 | <kbd>TAB</kbd>                                           | Switch between 'Todos'/'Dones'       |
 | <kbd>ESC</kbd>                                           | Cancel editing                       |
