@@ -3,7 +3,6 @@ use std::fmt;
 use std::fs::File;
 use std::io::{self, BufRead, Write};
 use std::process::exit;
-use std::ptr::eq;
 
 use chrono::{DateTime, Local};
 
@@ -71,18 +70,23 @@ impl Operation {
 pub struct Item {
     text: String,
     date: DateTime<Local>,
-    parent: Option<usize>,
-    children: Vec<usize>,
+    parent_offset: Option<isize>,
+    child_offsets: Vec<usize>,
     act_cnt: usize,
 }
 
 impl Item {
-    fn new(text: String, date: DateTime<Local>, parent: Option<usize>, act_cnt: usize) -> Self {
+    fn new(
+        text: String,
+        date: DateTime<Local>,
+        parent_offset: Option<isize>,
+        act_cnt: usize,
+    ) -> Self {
         Self {
             text,
             date,
-            parent,
-            children: Vec::new(),
+            parent_offset,
+            child_offsets: Vec::new(),
             act_cnt,
         }
     }
@@ -122,15 +126,18 @@ impl<'a> Iterator for ListIter<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         if self.cur < self.obj.list.len() {
             let item = &self.obj.list[self.cur];
-            self.cur += 1;
 
             let mut level = 0;
-            let mut parent = item.parent;
-            while let Some(p) = parent {
+            let mut cur = self.cur;
+            let mut p_offset = item.parent_offset;
+            while let Some(offset) = p_offset {
                 level += 1;
-                parent = self.obj.list[p].parent;
+                let parent = List::offset_to_idx(cur, offset);
+                p_offset = self.obj.list[parent].parent_offset;
+                cur = parent;
             }
 
+            self.cur += 1;
             Some((item, level))
         } else {
             None
@@ -151,9 +158,9 @@ impl List {
         self.list.push(item);
     }
 
-    fn add_child_to(&mut self, parent: usize, child: usize, inc: bool) {
+    fn add_child_to(&mut self, parent: usize, c_offset: usize, inc: bool) {
         if let Some(item) = self.list.get_mut(parent) {
-            item.children.push(child);
+            item.child_offsets.push(c_offset);
             if inc {
                 item.act_cnt += 1;
             }
@@ -197,88 +204,86 @@ impl List {
     }
 
     fn drag_up(&mut self) -> Result<(), &'static str> {
-        if self.list.is_empty() {
-            return Err("Can't drag up. List is empty.");
+        if let Some(item) = self.list.get_mut(self.cur) {
+            let p_offset = item.parent_offset;
+            let pier = self.list[..self.cur]
+                .iter()
+                .rposition(|item| item.parent_offset == p_offset);
+
+            match (p_offset, pier) {
+                (None, None) => {
+                    return Err("Can't drag up. Item is already at the top.");
+                }
+                (Some(_), None) => {
+                    return Err("Can't move a subtask out from its parent.");
+                }
+                (_, Some(pier)) => {
+                    let pier_child_cnt = self.children_cnt(pier) + 1;
+                    let child_cnt = self.children_cnt(self.cur) + 1;
+                    let to_move = self.cur - pier_child_cnt;
+
+                    let to_insert: Vec<Item> =
+                        self.list.drain(self.cur..self.cur + child_cnt).collect();
+                    self.list.splice(to_move..to_move, to_insert);
+
+                    if let Some(offset) = p_offset {
+                        let parent = List::offset_to_idx(self.cur, offset);
+                        self.list[parent]
+                            .child_offsets
+                            .retain(|&x| x != self.cur - parent);
+                        self.list[parent]
+                            .child_offsets
+                            .push(to_move + child_cnt - parent);
+                    }
+
+                    self.cur = to_move;
+                    Ok(())
+                }
+            }
+        } else {
+            Err("Can't drag up. List is empty.")
         }
-
-        let parent = self.list[self.cur].parent;
-        let pier = self.list[..self.cur]
-            .iter()
-            .rposition(|item| item.parent == parent);
-
-        if parent.is_none() && pier.is_none() {
-            return Err("Can't drag up. Item is already at the top.");
-        } else if parent.is_some() && pier.is_none() {
-            return Err("Can't move a subtask out from its parent.");
-        }
-
-        let pier = pier.unwrap();
-        let pier_child_cnt = self.children_cnt(pier) + 1;
-        let child_cnt = self.children_cnt(self.cur) + 1;
-        let to_move = self.cur - pier_child_cnt;
-
-        self.shift_indices(
-            self.cur,
-            -(pier_child_cnt as isize),
-            Some(self.cur + child_cnt),
-            parent,
-        );
-        self.shift_indices(
-            pier,
-            child_cnt as isize,
-            Some(self.cur),
-            self.list[pier].parent,
-        );
-
-        let to_insert: Vec<Item> = self.list.drain(self.cur..self.cur + child_cnt).collect();
-        self.list.splice(to_move..to_move, to_insert);
-        if let Some(parent) = parent {
-            self.list[parent].children.retain(|&x| x != self.cur);
-            self.list[parent].children.push(to_move + child_cnt);
-        }
-
-        self.cur = to_move;
-        Ok(())
     }
 
     fn drag_down(&mut self) -> Result<(), &'static str> {
-        if self.list.is_empty() {
-            return Err("Can't drag down. List is empty.");
+        if let Some(item) = self.list.get_mut(self.cur) {
+            let p_offset = item.parent_offset;
+            let pier = self.list[self.cur + 1..]
+                .iter()
+                .position(|item| item.parent_offset == p_offset);
+
+            match (p_offset, pier) {
+                (None, None) => {
+                    return Err("Can't drag down. Item is already at the bottom.");
+                }
+                (Some(_), None) => {
+                    return Err("Can't move a subtask out from its parent.");
+                }
+                (_, Some(pier)) => {
+                    let pier = pier + self.cur + 1;
+                    let pier_child_cnt = self.children_cnt(pier) + 1;
+                    let child_cnt = self.children_cnt(self.cur) + 1;
+                    let to_move = self.cur + pier_child_cnt;
+
+                    let to_insert: Vec<Item> =
+                        self.list.drain(self.cur..self.cur + child_cnt).collect();
+                    self.list.splice(to_move..to_move, to_insert);
+
+                    if let Some(offset) = p_offset {
+                        let parent = List::offset_to_idx(self.cur, offset);
+                        self.list[parent]
+                            .child_offsets
+                            .retain(|&x| x != pier - parent);
+                        self.list[parent].child_offsets.push(to_move - parent);
+                    }
+
+                    self.cur = to_move;
+                    Ok(())
+                }
+            }
+        } else {
+            Err("Can't drag up. List is empty.")
         }
-
-        let parent = self.list[self.cur].parent;
-        let pier = self.list[self.cur + 1..]
-            .iter()
-            .position(|item| item.parent == parent);
-
-        if parent.is_none() && pier.is_none() {
-            return Err("Can't drag down. Item is already at the bottom.");
-        } else if parent.is_some() && pier.is_none() {
-            return Err("Can't move a subtask out from its parent.");
-        }
-
-        let pier = pier.unwrap() + self.cur + 1;
-        let pier_child_cnt = self.children_cnt(pier) + 1;
-        let child_cnt = self.children_cnt(self.cur) + 1;
-        let to_move = self.cur + pier_child_cnt;
-
-        self.shift_indices(self.cur, pier_child_cnt as isize, Some(pier), parent);
-        self.shift_indices(
-            pier,
-            -(child_cnt as isize),
-            Some(pier + pier_child_cnt),
-            self.list[pier].parent,
-        );
-
-        let to_insert: Vec<Item> = self.list.drain(self.cur..self.cur + child_cnt).collect();
-        self.list.splice(to_move..to_move, to_insert);
-        if let Some(parent) = parent {
-            self.list[parent].children.retain(|&x| x != pier);
-            self.list[parent].children.push(to_move);
-        }
-
-        self.cur = to_move;
-        Ok(())
     }
 
     fn first(&mut self) {
@@ -300,112 +305,121 @@ impl List {
     fn children_cnt(&self, parent: usize) -> usize {
         let mut cnt = 0;
         if let Some(item) = self.list.get(parent) {
-            if item.children.is_empty() {
+            if item.child_offsets.is_empty() {
                 return 0;
             }
 
-            for child in item.children.iter() {
+            for child in item.child_offsets.iter() {
                 cnt += 1 + self.children_cnt(*child);
             }
         }
         cnt
     }
 
-    fn shift_indices(&mut self, from: usize, by: isize, to: Option<usize>, parent: Option<usize>) {
-        let to = to.unwrap_or(self.list.len());
+    fn shift_offsets(&mut self, parent: usize) {
+        if let Some(p) = self.list.get_mut(parent) {
+            p.child_offsets = p.child_offsets.iter().map(|&x| x + 1).collect();
 
-        for item in self.list.iter_mut().skip(from).take(to - from) {
-            if item.parent > parent {
-                if let Some(p) = item.parent {
-                    if p as isize + by >= 0 {
-                        item.parent = Some((p as isize + by) as usize);
+            for (i, item) in self.list.iter_mut().skip(parent).enumerate() {
+                if let Some(offset) = item.parent_offset {
+                    let item_parent = List::offset_to_idx(i + parent, offset);
+                    if parent < item_parent {
+                        item.parent_offset = Some(offset - 1);
                     }
-                }
-            }
-            for child_id in item.children.iter_mut() {
-                if *child_id as isize + by >= 0 {
-                    *child_id = (*child_id as isize + by) as usize;
+                } else {
+                    break;
                 }
             }
         }
     }
 
     fn insert(&mut self) -> Result<(), &'static str> {
-        let item = self.get_cur_item();
-        if item.is_some() && item.unwrap().parent.is_some() {
-            return Err("Can't insert item. Current item is a subtask.");
+        if let Some(item) = self.get_cur_item() {
+            if item.parent_offset.is_some() {
+                return Err("Can't insert item. Current item is a subtask.");
+            }
         }
 
-        self.shift_indices(self.cur, 1, None, None);
-        self.list
-            .insert(self.cur, Item::new(String::new(), Local::now(), None, 1));
-
+        let item = Item::new(String::new(), Local::now(), None, 1);
+        self.list.insert(self.cur, item);
         Ok(())
     }
 
     fn append(&mut self) -> Result<(), &'static str> {
-        if self.list.is_empty() {
-            return Err("Can't add subtask item. List is empty.");
+        if let Some(parent) = self.list.get_mut(self.cur) {
+            let item = Item::new(String::new(), Local::now(), Some(-1), 1);
+            parent.child_offsets.push(0);
+
+            self.unmark_parents(self.cur, Some(0));
+            self.shift_offsets(self.cur);
+
+            self.list.insert(self.cur + 1, item);
+            self.cur += 1;
+            Ok(())
+        } else {
+            Err("Can't add subtask item. List is empty.")
         }
-
-        self.shift_indices(self.cur, 1, None, Some(self.cur));
-        self.list.insert(
-            self.cur + 1,
-            Item::new(String::new(), Local::now(), Some(self.cur), 1),
-        );
-        self.list[self.cur].children.push(self.cur + 1);
-        self.unmark_parents(Some(self.cur));
-        self.cur += 1;
-
-        Ok(())
     }
 
-    fn unmark_parents(&mut self, parent: Option<usize>) {
-        let mut parent = parent;
-        while let Some(p) = parent {
-            if self.list[p].act_cnt >= 1 {
-                self.list[p].act_cnt += 1;
+    fn unmark_parents(&mut self, cur: usize, p_offset: Option<isize>) {
+        let mut cur = cur;
+        let mut p_offset = p_offset;
+
+        while let Some(offset) = p_offset {
+            let parent = Self::offset_to_idx(cur, offset);
+            if self.list[parent].act_cnt >= 1 {
+                self.list[parent].act_cnt += 1;
                 break;
-            } else if self.list[p].act_cnt == 0 {
-                self.list[p].act_cnt += 2;
+            } else if self.list[parent].act_cnt == 0 {
+                self.list[parent].act_cnt += 2;
             }
-            parent = self.list[p].parent;
+            p_offset = self.list[parent].parent_offset;
+            cur = parent;
         }
     }
 
     fn delete(&mut self) -> Result<(), &'static str> {
-        todo!();
-        // if self.cur < self.list.len() {
-        //     self.list.remove(self.cur);
-        //     if !self.list.is_empty() {
-        //         self.cur = min(self.cur, self.list.len() - 1);
-        //     } else {
-        //         self.cur = 0;
-        //     }
-        //     Ok(())
-        // } else {
-        //     Err("Can't delete item. List is empty.")
-        // }
+        if self.cur < self.list.len() {
+            self.list.remove(self.cur);
+            if !self.list.is_empty() {
+                self.cur = min(self.cur, self.list.len() - 1);
+            } else {
+                self.cur = 0;
+            }
+            Ok(())
+        } else {
+            Err("Can't delete item. List is empty.")
+        }
+    }
+
+    fn offset_to_idx(cur: usize, offset: isize) -> usize {
+        let idx = cur as isize + offset;
+        assert!(idx >= 0);
+        idx as usize
     }
 
     fn mark(&mut self) -> Result<(), &'static str> {
-        if self.list.is_empty() {
-            return Err("Can't mark item. List is empty.");
-        } else if self.list[self.cur].act_cnt > 1 {
-            return Err("Can't mark item. Item has active subtasks.");
-        }
+        // if let Some(item) = self.get_cur_item_mut() {
+        //     if item.act_cnt > 1 {
+        //         return Err("Can't mark item. Item has active subtasks.");
+        //     }
 
-        let parent = self.list[self.cur].parent;
-        if self.list[self.cur].act_cnt == 1 {
-            if let Some(p) = parent {
-                self.list[p].act_cnt -= 1;
-            }
-            self.list[self.cur].act_cnt = 0;
-        } else if self.list[self.cur].act_cnt == 0 {
-            self.unmark_parents(parent);
-            self.list[self.cur].act_cnt = 1;
-        }
+        //     let p_offset = item.parent_offset;
+        //     if item.act_cnt == 1 {
+        //         if let Some(offset) = p_offset {
+        //             let parent = Self::offset_to_idx(self.cur, offset);
+        //             self.list.get_mut(parent).unwrap().act_cnt -= 1;
+        //         }
+        //         item.act_cnt = 0;
+        //     } else if item.act_cnt == 0 {
+        //         self.unmark_parents(self.cur, p_offset);
+        //         item.act_cnt = 1;
+        //     }
 
+        //     Ok(())
+        // } else {
+        //     Err("Can't mark item. List is empty.")
+        // }
         Ok(())
     }
 
@@ -425,45 +439,46 @@ impl List {
     }
 
     fn edit(&mut self, cur: &mut usize, key: i32) {
-        let item = &mut self.list[self.cur];
-        *cur = min(*cur, item.text.len());
+        if let Some(item) = self.get_cur_item_mut() {
+            *cur = min(*cur, item.text.len());
 
-        match key {
-            32..=126 => {
-                if *cur > item.text.len() {
-                    item.text.push(key as u8 as char);
-                } else {
-                    item.text.insert(*cur, key as u8 as char);
-                }
-                *cur += 1;
-            }
-            constants::KEY_LEFT => {
-                if *cur > 0 {
-                    *cur -= 1;
-                }
-            }
-            constants::KEY_RIGHT => {
-                if *cur < item.text.len() {
+            match key {
+                32..=126 => {
+                    if *cur > item.text.len() {
+                        item.text.push(key as u8 as char);
+                    } else {
+                        item.text.insert(*cur, key as u8 as char);
+                    }
                     *cur += 1;
                 }
-            }
-            constants::KEY_BACKSPACE | 127 => {
-                // 127 is backspace
-                if *cur > 0 {
-                    *cur -= 1;
+                constants::KEY_LEFT => {
+                    if *cur > 0 {
+                        *cur -= 1;
+                    }
+                }
+                constants::KEY_RIGHT => {
+                    if *cur < item.text.len() {
+                        *cur += 1;
+                    }
+                }
+                constants::KEY_BACKSPACE | 127 => {
+                    // 127 is backspace
+                    if *cur > 0 {
+                        *cur -= 1;
+                        if *cur < item.text.len() {
+                            item.text.remove(*cur);
+                        }
+                    }
+                }
+                constants::KEY_DC => {
                     if *cur < item.text.len() {
                         item.text.remove(*cur);
                     }
                 }
+                constants::KEY_HOME | 1 => *cur = 0, // 1 is ctrl + a
+                constants::KEY_END | 5 => *cur = item.text.len(), // 5 is ctrl + e
+                _ => {}
             }
-            constants::KEY_DC => {
-                if *cur < item.text.len() {
-                    item.text.remove(*cur);
-                }
-            }
-            constants::KEY_HOME | 1 => *cur = 0, // 1 is ctrl + a
-            constants::KEY_END | 5 => *cur = item.text.len(), // 5 is ctrl + e
-            _ => {}
         }
     }
 }
@@ -472,9 +487,7 @@ impl List {
 pub struct TodoApp {
     message: String,
     panel: Panel,
-
     operation_stack: Vec<Operation>,
-
     todos: List,
     dones: List,
 }
@@ -484,9 +497,7 @@ impl TodoApp {
         Self {
             message: String::new(),
             panel: Panel::Todo,
-
             operation_stack: Vec::new(),
-
             todos: List::new(),
             dones: List::new(),
         }
@@ -523,7 +534,7 @@ impl TodoApp {
         self.todos
             .list
             .iter()
-            .filter(|item| item.parent.is_none())
+            .filter(|item| item.parent_offset.is_none())
             .count()
     }
 
@@ -538,7 +549,7 @@ impl TodoApp {
         self.dones
             .list
             .iter()
-            .filter(|item| item.parent.is_none())
+            .filter(|item| item.parent_offset.is_none())
             .count()
     }
 
@@ -590,8 +601,9 @@ impl TodoApp {
                         exit(1);
                     }
 
+                    let parent_offset = parent.map_or(None, |p| Some(p as isize - i as isize));
                     match panel {
-                        Panel::Todo => match self.parse_todo(&line, parent) {
+                        Panel::Todo => match self.parse_todo(&line, parent_offset) {
                             Err(e) => {
                                 eprintln!("[ERROR]: {}:{}: {}", file_path, i + 1, e);
                                 exit(1);
@@ -599,11 +611,11 @@ impl TodoApp {
                             Ok(todo) => {
                                 self.todos.add_item(todo);
                                 if let Some(parent) = parent {
-                                    self.todos.add_child_to(parent, i, true);
+                                    self.todos.add_child_to(parent, i - parent, true);
                                 }
                             }
                         },
-                        Panel::Done => match self.parse_done(&line, parent) {
+                        Panel::Done => match self.parse_done(&line, parent_offset) {
                             Err(e) => {
                                 eprintln!("[ERROR]: {}:{}: {}", file_path, i + 1, e);
                                 exit(1);
@@ -611,13 +623,13 @@ impl TodoApp {
                             Ok(done) => {
                                 self.dones.add_item(done);
                                 if let Some(parent) = parent {
-                                    self.dones.add_child_to(parent, i, false);
+                                    self.dones.add_child_to(parent, i - parent, false);
                                 }
                             }
                         },
                     }
                 }
-                self.message = format!("Loaded '{file_path}' file.")
+                self.message = format!("Loaded '{file_path}' file.");
             }
             Err(err) => {
                 if err.kind() == io::ErrorKind::NotFound {
@@ -630,23 +642,28 @@ impl TodoApp {
         }
     }
 
-    fn parse_todo(&mut self, line: &str, parent: Option<usize>) -> Result<Item, &'static str> {
+    fn parse_todo(&mut self, line: &str, p_offset: Option<isize>) -> Result<Item, &'static str> {
         let re_todo = Regex::new(r"^(\s{4})*TODO\(\): (.*)$").unwrap();
 
-        if let Some(c) = re_todo.captures(line) {
-            Ok(Item::new(c[2].trim().to_string(), Local::now(), parent, 1))
+        if let Some(caps) = re_todo.captures(line) {
+            Ok(Item::new(
+                caps[2].trim().to_string(),
+                Local::now(),
+                p_offset,
+                1,
+            ))
         } else {
             Err("invalid format for TODO item")
         }
     }
 
-    fn parse_done(&mut self, line: &str, parent: Option<usize>) -> Result<Item, &str> {
+    fn parse_done(&mut self, line: &str, p_offset: Option<isize>) -> Result<Item, &str> {
         let re_done = Regex::new(r"^(\s{4})*DONE\((.*)\): (.*)$").unwrap();
 
-        if let Some(c) = re_done.captures(line) {
-            let date = DateTime::parse_from_str(&c[2], DATE_FMT);
+        if let Some(caps) = re_done.captures(line) {
+            let date = DateTime::parse_from_str(&caps[2], DATE_FMT);
             if let Ok(d) = date {
-                Ok(Item::new(c[3].trim().to_string(), d.into(), parent, 0))
+                Ok(Item::new(caps[3].trim().to_string(), d.into(), p_offset, 0))
             } else {
                 Err("invalid date format for DONE item")
             }
@@ -939,13 +956,10 @@ impl TodoApp {
             "edit_item() called in already running edit mode."
         );
 
-        let mut editing_cursor = 0;
-
-        if self.panel == Panel::Todo && !self.todos.list.is_empty() {
-            editing_cursor = self.todos.get_cur_item().unwrap().text.len();
-        } else if self.panel == Panel::Done && !self.dones.list.is_empty() {
-            editing_cursor = self.dones.get_cur_item().unwrap().text.len();
-        }
+        let editing_cursor = match self.panel {
+            Panel::Todo => self.todos.get_cur_item().map_or(0, |item| item.text.len()),
+            Panel::Done => self.dones.get_cur_item().map_or(0, |item| item.text.len()),
+        };
 
         if editing_cursor > 0 {
             match self.panel {
@@ -964,11 +978,11 @@ impl TodoApp {
                 .push(Operation::new(Action::InEdit, self.panel));
             self.message.push_str("Editing current item.");
 
-            return Some(editing_cursor);
+            Some(editing_cursor)
         } else {
             self.message.push_str("Nothing to edit.");
+            None
         }
-        None
     }
 
     pub fn edit_item_with(&mut self, cur: &mut usize, key: i32) {
@@ -993,36 +1007,39 @@ impl TodoApp {
 
         match self.panel {
             Panel::Todo => {
-                if self.todos.get_cur_item().unwrap().text.is_empty() {
-                    let act = self
-                        .operation_stack
-                        .get(self.operation_stack.len() - 2)
-                        .unwrap()
-                        .action;
-                    match act {
-                        Action::Insert | Action::Append => {
-                            self.todos.delete().unwrap();
-                            if act == Action::Append {
-                                self.todos.up();
+                if let Some(item) = self.todos.get_cur_item() {
+                    if item.text.is_empty() {
+                        let act = self
+                            .operation_stack
+                            .get(self.operation_stack.len() - 2)
+                            .unwrap()
+                            .action;
+                        match act {
+                            Action::Insert | Action::Append => {
+                                self.todos.delete().unwrap();
+                                if act == Action::Append {
+                                    self.todos.up();
+                                }
+                                self.todos.revert_state().unwrap();
+                                self.operation_stack.pop();
                             }
-                            self.todos.revert_state().unwrap();
-                            self.operation_stack.pop();
+                            Action::Edit => {
+                                self.message.push_str("TODO item can't be empty.");
+                                return false;
+                            }
+                            _ => unreachable!(),
                         }
-                        Action::Edit => {
-                            self.message.push_str("TODO item can't be empty.");
-                            return false;
-                        }
-                        _ => unreachable!(),
                     }
-                } else {
                     self.todos.get_cur_item_mut().unwrap().trim_text();
                 }
             }
             Panel::Done => {
-                if self.dones.get_cur_item().unwrap().text.is_empty() {
-                    self.dones.delete().unwrap();
-                } else {
-                    self.dones.get_cur_item_mut().unwrap().trim_text();
+                if let Some(cur_done) = self.dones.get_cur_item_mut() {
+                    if cur_done.text.is_empty() {
+                        self.dones.delete().unwrap();
+                    } else {
+                        cur_done.trim_text();
+                    }
                 }
             }
         }
