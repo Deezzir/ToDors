@@ -11,7 +11,7 @@ use mods::ui::*;
 use mods::utils::*;
 
 const TIMEOUT: i32 = 1000; // 1 second
-const FPS: i32 = 30; // 30 frames per second
+const FPS: i32 = 30;
 
 const SELECTED_PAIR: i16 = 1;
 const UNSELECTED_PAIR: i16 = 2;
@@ -69,17 +69,16 @@ fn main() {
         .unwrap()
         .to_string();
 
-    ncurses_init();
-
     let mut editing_cursor: usize = 0;
     let mut term_size = Vec2::new(0, 0);
     let mut timeout = 0;
-
     let mut mode: Mode = Mode::Normal;
     let mut app: TodoApp = TodoApp::new();
     let mut ui = UI::new();
-
     app.parse(&file_path);
+
+    ncurses_init();
+
     while !poll() {
         getmaxyx(stdscr(), &mut term_size.y, &mut term_size.x);
 
@@ -132,24 +131,29 @@ fn main() {
                             ui.label_styled(" TODO ", UNSELECTED_PAIR, None);
                         }
                         ui.hl();
+
                         for (todo, level) in app.iter_todos() {
                             let indent = "    ".repeat(level);
+                            let prefix = if todo.is_active() { "[ ] " } else { "[X] " };
+                            let text = todo.get_text();
+                            let _date = todo.get_date();
+
                             if app.is_cur_todo(todo) && app.is_in_todo_panel() {
                                 if mode == Mode::Edit {
                                     ui.edit_label(
-                                        todo.get_text(),
+                                        text,
                                         editing_cursor,
-                                        format!("{indent}[ ] "),
+                                        format!("{indent}{prefix}"),
                                     );
                                 } else {
                                     ui.label_styled(
-                                        &format!("{indent}[ ] {}", todo.get_text()),
+                                        &format!("{indent}{prefix}{text}"),
                                         SELECTED_PAIR,
                                         None,
                                     );
                                 }
                             } else {
-                                ui.label(&format!("{indent}[ ] {}", todo.get_text()));
+                                ui.label(&format!("{indent}{prefix}{text}"));
                             }
                         }
                     }
@@ -163,24 +167,29 @@ fn main() {
                             ui.label_styled(" DONE ", UNSELECTED_PAIR, None);
                         }
                         ui.hl();
+
                         for (done, level) in app.iter_dones() {
                             let indent = "    ".repeat(level);
+                            let prefix = if !done.is_active() { "[X]" } else { panic!() };
+                            let text = done.get_text();
+                            let date = done.get_date();
+
                             if app.is_cur_done(done) && app.is_in_done_panel() {
                                 if mode == Mode::Edit {
                                     ui.edit_label(
-                                        done.get_text(),
+                                        text,
                                         editing_cursor,
-                                        format!("{indent}[X] "),
+                                        format!("{indent}{prefix}"),
                                     );
                                 } else {
                                     ui.label_styled(
-                                        &format!("[X] ({}) {}", done.get_date(), done.get_text()),
+                                        &format!("{prefix} ({date}) {text}"),
                                         SELECTED_PAIR,
                                         None,
                                     );
                                 }
                             } else {
-                                ui.label(&format!("[X]|{}| {}", done.get_date(), done.get_text()));
+                                ui.label(&format!("{prefix}|{date}| {text}"));
                             }
                         }
                     }
@@ -199,15 +208,19 @@ fn main() {
                 Mode::Normal => {
                     app.clear_message();
                     match char::from_u32(key as u32).unwrap() {
-                        'k' | '\u{103}' => app.go_up(),   // 'k' or 'up'
-                        'j' | '\u{102}' => app.go_down(), // 'j' or 'down'
-                        'K' | '\u{151}' => app.drag_up(),
-                        'J' | '\u{150}' => app.drag_down(),
+                        'k' | '\u{103}' => app.go_up(),     // 'k' or 'up'
+                        'j' | '\u{102}' => app.go_down(),   // 'j' or 'down'
+                        'K' | '\u{151}' => app.drag_up(),   // 'K' or 'shift+up'
+                        'J' | '\u{150}' => app.drag_down(), // 'J' or 'shift+down'
                         'g' => app.go_top(),
                         'G' => app.go_bottom(),
                         'h' => app.go_half(),
-                        '\n' => app.transfer_item(),
+                        '\n' => app.mark_item(),
                         'd' => app.delete_item(),
+                        'u' => app.undo(),
+                        '\t' => app.toggle_panel(),
+                        't' => todo!(),
+                        '?' => todo!(),
                         'i' => {
                             if let Some(cur) = app.insert_item() {
                                 editing_cursor = cur;
@@ -226,10 +239,6 @@ fn main() {
                                 mode = Mode::Edit;
                             }
                         }
-                        'u' => app.undo(),
-                        '\t' => app.toggle_panel(),
-                        't' => todo!(),
-                        '?' => todo!(),
                         'q' => break,
                         _ => {}
                     }
@@ -257,6 +266,7 @@ fn main() {
 
     endwin();
     app.save(&file_path).unwrap();
+
     println!("[INFO]: Saved to '{file_path}', Bye!");
-    println!("{app:#?}");
+    // println!("{app:#?}");
 }
