@@ -342,7 +342,7 @@ impl List {
                 }
             }
             for child_id in item.children.iter_mut() {
-                if *child_id as isize + by >= 0 {
+                if *child_id as isize + by >= 0 && *child_id >= parent {
                     *child_id = (*child_id as isize + by) as usize;
                 }
             }
@@ -370,7 +370,7 @@ impl List {
             parent.children.push(self.cur);
 
             self.unmark_parents(Some(self.cur));
-            self.shift_indices(1, self.cur, None, Some(self.cur));
+            self.shift_indices(1, 0, None, Some(self.cur));
 
             self.list.insert(self.cur + 1, item);
             self.cur += 1;
