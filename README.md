@@ -24,7 +24,8 @@ cargo run --release
 | <kbd>r</kbd>                                             | Edit current item                    |
 | <kbd>t</kbd>                                             | Hide subtasks                        |
 | <kbd>?</kbd>                                             | Show help                            |
-| <kbd>ENTER</kbd>                                         | Mark element/Save edited item        |
-| <kbd>TAB</kbd>                                           | Switch between 'Todos'/'Dones'       |
+| <kbd>SPACE</kbd>                                         | Mark current item as 'Done'          |
+| <kbd>ENTER</kbd>                                         | Transfer element/Save edited item    |
 | <kbd>ESC</kbd>                                           | Cancel editing/inserting             |
+| <kbd>TAB</kbd>                                           | Switch between 'Todos'/'Dones'       |
 | <kbd>q</kbd>,<kbd>CTRL+c</kbd>                           | Quit                                 |

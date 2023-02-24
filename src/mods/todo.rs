@@ -8,6 +8,8 @@ use chrono::{DateTime, Local};
 
 use ncurses::constants;
 use regex::Regex;
+
+use crate::INDENT_SIZE;
 // const MAX_STACK_SIZE: usize = 20;
 const SEP: &str = "<--->";
 const DATE_FMT: &str = "%Y-%m-%d %H:%M %z";
@@ -102,6 +104,10 @@ impl Item {
 
     pub fn has_children(&self) -> bool {
         !self.children.is_empty()
+    }
+
+    pub fn is_root(&self) -> bool {
+        self.parent.is_none()
     }
 
     fn trim_text(&mut self) {
@@ -219,30 +225,30 @@ impl List {
                 (_, Some(pier)) => {
                     let pier_child_cnt = self.children_cnt(pier) + 1;
                     let child_cnt = self.children_cnt(self.cur) + 1;
-                    let to_move = self.cur - pier_child_cnt;
+                    let move_to = self.cur - pier_child_cnt;
 
                     self.shift_indices(
-                        self.cur,
                         -(pier_child_cnt as isize),
+                        self.cur,
                         Some(self.cur + child_cnt),
                         parent,
                     );
                     self.shift_indices(
-                        pier,
                         child_cnt as isize,
+                        pier,
                         Some(self.cur),
                         self.list[pier].parent,
                     );
 
-                    let to_insert: Vec<Item> =
+                    let to_drag: Vec<Item> =
                         self.list.drain(self.cur..self.cur + child_cnt).collect();
-                    self.list.splice(to_move..to_move, to_insert);
+                    self.list.splice(move_to..move_to, to_drag);
                     if let Some(parent) = parent {
                         self.list[parent].children.retain(|&x| x != self.cur);
-                        self.list[parent].children.push(to_move + child_cnt);
+                        self.list[parent].children.push(move_to + child_cnt);
                     }
 
-                    self.cur = to_move;
+                    self.cur = move_to;
                     Ok(())
                 }
             }
@@ -265,26 +271,26 @@ impl List {
                     let pier = pier + self.cur + 1;
                     let pier_child_cnt = self.children_cnt(pier) + 1;
                     let child_cnt = self.children_cnt(self.cur) + 1;
-                    let to_move = self.cur + pier_child_cnt;
+                    let move_to = self.cur + pier_child_cnt;
 
-                    self.shift_indices(self.cur, pier_child_cnt as isize, Some(pier), parent);
+                    self.shift_indices(pier_child_cnt as isize, self.cur, Some(pier), parent);
                     self.shift_indices(
-                        pier,
                         -(child_cnt as isize),
+                        pier,
                         Some(pier + pier_child_cnt),
                         self.list[pier].parent,
                     );
 
-                    let to_insert: Vec<Item> =
+                    let to_drag: Vec<Item> =
                         self.list.drain(self.cur..self.cur + child_cnt).collect();
-                    self.list.splice(to_move..to_move, to_insert);
+                    self.list.splice(move_to..move_to, to_drag);
 
                     if let Some(parent) = parent {
                         self.list[parent].children.retain(|&x| x != pier);
-                        self.list[parent].children.push(to_move);
+                        self.list[parent].children.push(move_to);
                     }
 
-                    self.cur = to_move;
+                    self.cur = move_to;
                     Ok(())
                 }
             }
@@ -323,8 +329,9 @@ impl List {
         cnt
     }
 
-    fn shift_indices(&mut self, from: usize, by: isize, to: Option<usize>, parent: Option<usize>) {
+    fn shift_indices(&mut self, by: isize, from: usize, to: Option<usize>, parent: Option<usize>) {
         let to = to.unwrap_or(self.list.len());
+        assert!(from <= to, "from must be less or equal than to");
 
         for item in self.list.iter_mut().skip(from).take(to - from) {
             if item.parent > parent {
@@ -351,7 +358,7 @@ impl List {
 
         let item = Item::new(String::new(), Local::now(), None, 1);
 
-        self.shift_indices(self.cur, 1, None, None);
+        self.shift_indices(1, self.cur, None, None);
         self.list.insert(self.cur, item);
 
         Ok(())
@@ -363,7 +370,7 @@ impl List {
             parent.children.push(self.cur);
 
             self.unmark_parents(Some(self.cur));
-            self.shift_indices(self.cur, 1, None, Some(self.cur));
+            self.shift_indices(1, self.cur, None, Some(self.cur));
 
             self.list.insert(self.cur + 1, item);
             self.cur += 1;
@@ -424,19 +431,36 @@ impl List {
         }
     }
 
-    fn _transfer(&mut self) {
-        // if self.cur < self.list.len() {
-        //     self.list[self.cur].date = Local::now();
-        //     rhs.list.push(self.list.remove(self.cur));
-        //     if !self.list.is_empty() {
-        //         self.cur = min(self.cur, self.list.len() - 1);
-        //     } else {
-        //         self.cur = 0;
-        //     }
-        //     Ok(())
-        // } else {
-        //     Err("Can't move item. List is empty.")
-        // }
+    fn transfer(&mut self, rhs: &mut Self) -> Result<(), &'static str> {
+        assert!(!std::ptr::eq(self, rhs), "Can't transfer item to itself.");
+
+        if let Some(item) = self.get_cur_item_mut() {
+            if !item.is_root() {
+                return Err("Can't transfer item. Item is a subtask.");
+            } else if item.is_active() {
+                return Err("Can't transfer item. Item is active.");
+            }
+
+            item.date = Local::now();
+            let child_cnt = self.children_cnt(self.cur) + 1;
+            let move_to = rhs.list.len();
+
+            self.shift_indices(-(child_cnt as isize), self.cur + child_cnt, None, None);
+
+            let to_transfer: Vec<Item> = self.list.drain(self.cur..self.cur + child_cnt).collect();
+            rhs.list.append(&mut to_transfer.into());
+
+            rhs.shift_indices(-(self.cur as isize) + move_to as isize, move_to, None, None);
+
+            if !self.list.is_empty() {
+                self.cur = min(self.cur, self.list.len() - 1);
+            } else {
+                self.cur = 0;
+            }
+            Ok(())
+        } else {
+            Err("Can't move item. List is empty.")
+        }
     }
 
     fn edit(&mut self, cur: &mut usize, key: i32) {
@@ -506,15 +530,15 @@ impl TodoApp {
         }
     }
 
-    pub fn is_in_todo_panel(&self) -> bool {
+    pub fn is_in_todos(&self) -> bool {
         self.panel == Panel::Todo
     }
 
-    pub fn is_subs_toggled(&self) -> bool {
+    pub fn is_subs_hidden(&self) -> bool {
         self.hide_subs
     }
 
-    pub fn is_in_done_panel(&self) -> bool {
+    pub fn is_in_dones(&self) -> bool {
         self.panel == Panel::Done
     }
 
@@ -572,7 +596,9 @@ impl TodoApp {
         let sep = SEP;
         let re_indent = Regex::new(r"^((\s{4})*)\S+").unwrap();
         let mut panel = Panel::Todo;
+
         let mut stack = Vec::new();
+        let mut cnt_todos = 0;
         let mut cur_indent = 0;
 
         match file {
@@ -594,7 +620,7 @@ impl TodoApp {
                     }
 
                     if let Some(m) = re_indent.captures(&line) {
-                        let indent = m[1].len() / 4;
+                        let indent = m[1].len() / INDENT_SIZE;
                         match indent.cmp(&cur_indent) {
                             Ordering::Less => {
                                 (0..(cur_indent - indent + 1)).map(|_| stack.pop()).last();
@@ -617,24 +643,31 @@ impl TodoApp {
                                 exit(1);
                             }
                             Ok(todo) => {
+                                let active = todo.is_active();
+                                cnt_todos += 1;
+
                                 self.todos.add_item(todo);
                                 if let Some(parent) = parent {
-                                    self.todos.add_child_to(parent, i, true);
+                                    self.todos.add_child_to(parent, i, active);
                                 }
                             }
                         },
-                        Panel::Done => match self.parse_done(&line, parent) {
-                            Err(e) => {
-                                eprintln!("[ERROR]: {}:{}: {}", file_path, i + 1, e);
-                                exit(1);
-                            }
-                            Ok(done) => {
-                                self.dones.add_item(done);
-                                if let Some(parent) = parent {
-                                    self.dones.add_child_to(parent, i, false);
+                        Panel::Done => {
+                            let parent = parent.map(|p| p - cnt_todos - 1);
+                            match self.parse_done(&line, parent) {
+                                Err(e) => {
+                                    eprintln!("[ERROR]: {}:{}: {}", file_path, i + 1, e);
+                                    exit(1);
+                                }
+                                Ok(done) => {
+                                    let i = i - cnt_todos - 1;
+                                    self.dones.add_item(done);
+                                    if let Some(parent) = parent {
+                                        self.dones.add_child_to(parent, i, false);
+                                    }
                                 }
                             }
-                        },
+                        }
                     }
                 }
                 self.message = format!("Loaded '{file_path}' file.")
@@ -651,14 +684,15 @@ impl TodoApp {
     }
 
     fn parse_todo(&mut self, line: &str, parent: Option<usize>) -> Result<Item, &'static str> {
-        let re_todo = Regex::new(r"^(\s{4})*TODO\(\): (.*)$").unwrap();
+        let re_todo = Regex::new(r"^(\s{4})*TODO\((\*|)\): (.*)$").unwrap();
 
         if let Some(caps) = re_todo.captures(line) {
+            let act_cnt = if caps[2].is_empty() { 0 } else { 1 };
             Ok(Item::new(
-                caps[2].trim().to_string(),
+                caps[3].trim().to_string(),
                 Local::now(),
                 parent,
-                1,
+                act_cnt,
             ))
         } else {
             Err("invalid format for TODO item")
@@ -686,14 +720,15 @@ impl TodoApp {
 
         let mut file = File::create(file_path)?;
         for (todo, level) in self.iter_todos() {
-            let indent = "    ".repeat(level);
-            writeln!(file, "{indent}TODO(): {}", todo.text).unwrap();
+            let indent = " ".repeat(level * INDENT_SIZE);
+            let act = if todo.is_active() { "*" } else { "" };
+            writeln!(file, "{indent}TODO({act}): {}", todo.text).unwrap();
         }
 
         writeln!(file, "{sep}").unwrap();
 
         for (done, level) in self.iter_dones() {
-            let indent = "    ".repeat(level);
+            let indent = " ".repeat(level * INDENT_SIZE);
             let date = done.date.format(DATE_FMT);
             writeln!(file, "{indent}DONE({date}): {}", done.text).unwrap();
         }
@@ -814,25 +849,48 @@ impl TodoApp {
     }
 
     pub fn mark_item(&mut self) {
-        assert!(!self.is_in_edit(), "Can't move item while in edit mode");
+        assert!(!self.is_in_edit(), "Can't mark item while in edit mode");
+
+        match self.panel {
+            Panel::Todo => {
+                self.todos.record_state();
+                match self.todos.mark() {
+                    Ok(()) => {
+                        self.operation_stack
+                            .push(Operation::new(Action::Mark, Panel::Todo));
+                    }
+                    Err(err) => {
+                        self.message.push_str(err);
+                        self.todos.revert_state().unwrap();
+                    }
+                };
+            }
+            Panel::Done => self
+                .message
+                .push_str("Can't mark done item, try transfering it first."),
+        };
+    }
+
+    pub fn transfer_item(&mut self) {
+        assert!(!self.is_in_edit(), "Can't transfer item while in edit mode");
 
         self.todos.record_state();
         self.dones.record_state();
 
         let result = match self.panel {
-            Panel::Todo => self.todos.mark(),
-            Panel::Done => self.dones.mark(),
+            Panel::Todo => self.todos.transfer(&mut self.dones),
+            Panel::Done => self.dones.transfer(&mut self.todos),
         };
         match result {
             Ok(()) => match self.panel {
                 Panel::Todo => {
                     self.operation_stack
-                        .push(Operation::new(Action::Mark, Panel::Todo));
+                        .push(Operation::new(Action::Transfer, Panel::Todo));
                     self.message.push_str("Done! Great job!");
                 }
                 Panel::Done => {
                     self.operation_stack
-                        .push(Operation::new(Action::Mark, Panel::Done));
+                        .push(Operation::new(Action::Transfer, Panel::Done));
                     self.message.push_str("Not done yet? Keep going!")
                 }
             },
@@ -850,7 +908,7 @@ impl TodoApp {
         match self.panel {
             Panel::Todo => self
                 .message
-                .push_str("Can't delete a TODO item. Mark it as DONE first."),
+                .push_str("Can't delete a TODO item. Transfer it to DONE first."),
             Panel::Done => {
                 self.dones.record_state();
                 match self.dones.delete() {
@@ -877,7 +935,7 @@ impl TodoApp {
                 match op.action {
                     Action::Transfer => {
                         self.todos.revert_state().unwrap();
-                        // self.dones.revert_state().unwrap();
+                        self.dones.revert_state().unwrap();
                     }
                     _ => match op.panel {
                         Panel::Todo => {

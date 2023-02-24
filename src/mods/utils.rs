@@ -4,7 +4,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use ncurses::*;
 
-use crate::{FILE_PATH, FPS, HELP, HIGHLIGHT_PAIR, SELECTED_PAIR, UI_PAIR, UNSELECTED_PAIR, USAGE};
+use crate::{
+    FILE_PATH, FPS, HELP, HELP_PAIR, HIGHLIGHT_PAIR, SELECTED_PAIR, UI_PAIR, UNSELECTED_PAIR, USAGE,
+};
 
 #[cfg(not(unix))]
 compile_error! {"Windows is not supported right now"}
@@ -22,7 +24,7 @@ pub fn sig_handler_init() {
     }
 }
 
-pub fn poll() -> bool {
+pub fn ctrlc_poll() -> bool {
     CTRLC.swap(false, Ordering::Relaxed)
 }
 
@@ -45,6 +47,7 @@ pub fn ncurses_init() {
     init_pair(SELECTED_PAIR, COLOR_BLACK, COLOR_CYAN);
     init_pair(UNSELECTED_PAIR, COLOR_BLACK, COLOR_WHITE);
     init_pair(UI_PAIR, COLOR_WHITE, COLOR_BLACK);
+    init_pair(HELP_PAIR, COLOR_WHITE, COLOR_BLACK);
 }
 
 pub fn get_args() -> String {
