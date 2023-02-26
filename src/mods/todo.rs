@@ -341,8 +341,10 @@ impl List {
                     }
                 }
             }
+
+            let parent = parent.unwrap_or(0);
             for child_id in item.children.iter_mut() {
-                if *child_id as isize + by >= 0 && *child_id >= parent {
+                if *child_id as isize + by >= 0 && *child_id > parent {
                     *child_id = (*child_id as isize + by) as usize;
                 }
             }
@@ -365,13 +367,13 @@ impl List {
     }
 
     fn append(&mut self) -> Result<(), &'static str> {
-        if let Some(parent) = self.list.get_mut(self.cur) {
+        if self.list.len() > 0 {
             let item = Item::new(String::new(), Local::now(), Some(self.cur), 1);
-            parent.children.push(self.cur);
 
             self.unmark_parents(Some(self.cur));
             self.shift_indices(1, 0, None, Some(self.cur));
 
+            self.list[self.cur].children.push(self.cur + 1);
             self.list.insert(self.cur + 1, item);
             self.cur += 1;
 
@@ -417,6 +419,8 @@ impl List {
             let parent = item.parent;
             if item.act_cnt == 1 {
                 item.act_cnt = 0;
+                item.date = Local::now();
+
                 if let Some(p) = parent {
                     self.list[p].act_cnt -= 1;
                 }
@@ -1088,7 +1092,6 @@ impl TodoApp {
                             .action;
                         match act {
                             Action::Insert | Action::Append => {
-                                self.todos.delete().unwrap();
                                 if act == Action::Append {
                                     self.todos.up();
                                 }
@@ -1108,10 +1111,10 @@ impl TodoApp {
             Panel::Done => {
                 if let Some(cur_done) = self.dones.get_cur_item_mut() {
                     if cur_done.text.is_empty() {
-                        self.dones.delete().unwrap();
-                    } else {
-                        cur_done.trim_text();
+                        self.message.push_str("DONE item can't be empty.");
+                        return false;
                     }
+                    cur_done.trim_text();
                 }
             }
         }

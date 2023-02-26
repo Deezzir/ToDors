@@ -3,7 +3,8 @@ TODO(*): Finish Rust TODO app v2
         TODO(): rework saving and dumping
         TODO(*): rework actions
             TODO(*): deleting
-                TODO(*): test
+                TODO(*): delete DONE item
+                TODO(*): delete a subtask
             TODO(): transfering
             TODO(): draging
             TODO(): inserting

@@ -20,7 +20,7 @@ const HIGHLIGHT_PAIR: i16 = 3;
 const UI_PAIR: i16 = 4;
 const HELP_PAIR: i16 = 5;
 
-const USAGE: &str = "Usage: todo [-f | --file <file>] [-h | --help]";
+const USAGE: &str = "Usage: todors [-f | --file <file>] [-h | --help]";
 const HELP: &str = r#"ToDors - a simple todo list manager in terminal.
 Author: Iurii Kondrakov <deezzir@gmail.com>
 
@@ -73,6 +73,7 @@ fn main() {
     let mut editing_cursor: usize = 0;
     let mut term_size = Vec2::new(0, 0);
     let mut timeout = 0;
+
     let mut mode: Mode = Mode::Normal;
     let mut disp: Display = Display::App;
     let mut ui = UI::new();
@@ -240,7 +241,6 @@ fn display_app(ui: &mut UI, app: &mut TodoApp, mode: Mode, editing_cursor: usize
                 let indent = " ".repeat(level * INDENT_SIZE);
                 let prefix = prefix(app.is_subs_hidden(), todo.has_children(), todo.is_active());
                 let text = todo.get_text();
-                let _date = todo.get_date();
 
                 if app.is_cur_todo(todo) && app.is_in_todos() {
                     if mode == Mode::Edit {
