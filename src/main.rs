@@ -99,8 +99,8 @@ fn main() {
                         ui.label_styled(
                             &format!(
                                 "[CONTENT]: ({})todos and ({})dones",
-                                app.get_todos_n(),
-                                app.get_dones_n()
+                                app.get_todos_n(false),
+                                app.get_dones_n(false)
                             ),
                             UI_PAIR,
                             Some(A_BOLD()),

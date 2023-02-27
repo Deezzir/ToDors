@@ -1,10 +1,13 @@
 TODO(*): Finish Rust TODO app v2
     TODO(*): Add subtodos
+        TODO(*): add hide functionality
+            TODO(*): hide key
+            TODO(*): move cursor accordingly
         TODO(): rework saving and dumping
-        TODO(*): rework actions
-            TODO(*): deleting
-                TODO(*): delete DONE item
-                TODO(*): delete a subtask
+        TODO(): rework actions
+            TODO(): deleting
+                TODO(): delete DONE item
+                TODO(): delete a subtask
             TODO(): transfering
             TODO(): draging
             TODO(): inserting

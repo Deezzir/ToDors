@@ -407,17 +407,23 @@ impl List {
     fn delete(&mut self) -> Result<(), &'static str> {
         if let Some(item) = self.get_cur_item() {
             let child_cnt = self.children_cnt(self.cur) + 1;
+            let parent = item.parent;
 
-            if let Some(parent) = item.parent {
-                self.list[parent]
-                    .children
-                    .retain(|&x| x != self.cur + child_cnt);
+            if let Some(parent) = parent {
+                self.list[parent].children.retain(|&x| x != self.cur);
+
+                for child in self.list[parent].children.iter_mut() {
+                    if *child > self.cur {
+                        *child -= child_cnt;
+                    }
+                }
+
                 if self.list[parent].act_cnt > 1 {
                     self.list[parent].act_cnt -= 1;
                 }
             }
 
-            self.shift_indices(-(child_cnt as isize), self.cur + child_cnt, None, None);
+            self.shift_indices(-(child_cnt as isize), self.cur + child_cnt, None, parent);
 
             self.list.splice(self.cur..self.cur + child_cnt, vec![]);
             if !self.list.is_empty() {
@@ -589,12 +595,16 @@ impl TodoApp {
         }
     }
 
-    pub fn get_todos_n(&self) -> usize {
-        self.todos
-            .list
-            .iter()
-            .filter(|item| item.parent.is_none())
-            .count()
+    pub fn get_todos_n(&self, full: bool) -> usize {
+        if full {
+            self.todos.list.len()
+        } else {
+            self.todos
+                .list
+                .iter()
+                .filter(|item| item.parent.is_none())
+                .count()
+        }
     }
 
     pub fn iter_dones(&self) -> ListIter {
@@ -605,12 +615,16 @@ impl TodoApp {
         }
     }
 
-    pub fn get_dones_n(&self) -> usize {
-        self.dones
-            .list
-            .iter()
-            .filter(|item| item.parent.is_none())
-            .count()
+    pub fn get_dones_n(&self, full: bool) -> usize {
+        if full {
+            self.dones.list.len()
+        } else {
+            self.dones
+                .list
+                .iter()
+                .filter(|item| item.parent.is_none())
+                .count()
+        }
     }
 
     pub fn clear_message(&mut self) {
