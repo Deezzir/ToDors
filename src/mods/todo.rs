@@ -167,6 +167,14 @@ impl List {
         self.list.push(item);
     }
 
+    fn is_at_sub(&self) -> bool {
+        self.list.is_empty() || !self.list[self.cur].is_root()
+    }
+
+    fn is_at_root(&self) -> bool {
+        self.list.is_empty() || self.list[self.cur].is_root()
+    }
+
     fn add_child_to(&mut self, parent: usize, child: usize, inc: bool) {
         if let Some(item) = self.list.get_mut(parent) {
             item.children.push(child);
@@ -367,7 +375,7 @@ impl List {
     }
 
     fn append(&mut self) -> Result<(), &'static str> {
-        if self.list.len() > 0 {
+        if self.get_cur_item().is_some() {
             let item = Item::new(String::new(), Local::now(), Some(self.cur), 1);
 
             self.unmark_parents(Some(self.cur));
@@ -397,13 +405,27 @@ impl List {
     }
 
     fn delete(&mut self) -> Result<(), &'static str> {
-        if self.cur < self.list.len() {
-            self.list.remove(self.cur);
+        if let Some(item) = self.get_cur_item() {
+            let child_cnt = self.children_cnt(self.cur) + 1;
+
+            if let Some(parent) = item.parent {
+                self.list[parent]
+                    .children
+                    .retain(|&x| x != self.cur + child_cnt);
+                if self.list[parent].act_cnt > 1 {
+                    self.list[parent].act_cnt -= 1;
+                }
+            }
+
+            self.shift_indices(-(child_cnt as isize), self.cur + child_cnt, None, None);
+
+            self.list.splice(self.cur..self.cur + child_cnt, vec![]);
             if !self.list.is_empty() {
                 self.cur = min(self.cur, self.list.len() - 1);
             } else {
                 self.cur = 0;
             }
+
             Ok(())
         } else {
             Err("Can't delete item. List is empty.")
@@ -451,8 +473,9 @@ impl List {
 
             self.shift_indices(-(child_cnt as isize), self.cur + child_cnt, None, None);
 
-            let to_transfer: Vec<Item> = self.list.drain(self.cur..self.cur + child_cnt).collect();
-            rhs.list.append(&mut to_transfer.into());
+            let mut to_transfer: Vec<Item> =
+                self.list.drain(self.cur..self.cur + child_cnt).collect();
+            rhs.list.append(&mut to_transfer);
 
             rhs.shift_indices(-(self.cur as isize) + move_to as isize, move_to, None, None);
 
@@ -910,22 +933,43 @@ impl TodoApp {
         assert!(!self.is_in_edit(), "Can't delete while in edit mode");
 
         match self.panel {
-            Panel::Todo => self
-                .message
-                .push_str("Can't delete a TODO item. Transfer it to DONE first."),
+            Panel::Todo => {
+                if self.todos.is_at_sub() {
+                    self.todos.record_state();
+                    match self.todos.delete() {
+                        Ok(()) => {
+                            self.message.push_str("A TODO subtask deleted.");
+                            self.operation_stack
+                                .push(Operation::new(Action::Delete, Panel::Todo));
+                        }
+                        Err(err) => {
+                            self.message.push_str(err);
+                            self.todos.revert_state().unwrap();
+                        }
+                    };
+                } else {
+                    self.message
+                        .push_str("Can't delete a TODO item. Transfer it to DONE first.");
+                }
+            }
             Panel::Done => {
-                self.dones.record_state();
-                match self.dones.delete() {
-                    Ok(()) => {
-                        self.message.push_str("DONE item deleted.");
-                        self.operation_stack
-                            .push(Operation::new(Action::Delete, Panel::Done));
-                    }
-                    Err(err) => {
-                        self.message.push_str(err);
-                        self.dones.revert_state().unwrap();
-                    }
-                };
+                if self.dones.is_at_root() {
+                    self.dones.record_state();
+                    match self.dones.delete() {
+                        Ok(()) => {
+                            self.message.push_str("DONE item deleted.");
+                            self.operation_stack
+                                .push(Operation::new(Action::Delete, Panel::Done));
+                        }
+                        Err(err) => {
+                            self.message.push_str(err);
+                            self.dones.revert_state().unwrap();
+                        }
+                    };
+                } else {
+                    self.message
+                        .push_str("Can't delete a subtask. Only root items can be deleted.");
+                }
             }
         }
     }
@@ -1092,9 +1136,6 @@ impl TodoApp {
                             .action;
                         match act {
                             Action::Insert | Action::Append => {
-                                if act == Action::Append {
-                                    self.todos.up();
-                                }
                                 self.todos.revert_state().unwrap();
                                 self.operation_stack.pop();
                             }

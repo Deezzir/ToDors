@@ -213,7 +213,10 @@ fn main() {
     app.save(&file_path).unwrap();
 
     println!("[INFO]: Saved to '{file_path}', Bye!");
-    println!("{app:#?}");
+
+    if cfg!(debug_assertions) {
+        println!("{app:#?}");
+    }
 }
 
 fn prefix(subs_hidden: bool, has_children: bool, active: bool) -> &'static str {
@@ -241,15 +244,20 @@ fn display_app(ui: &mut UI, app: &mut TodoApp, mode: Mode, editing_cursor: usize
                 let indent = " ".repeat(level * INDENT_SIZE);
                 let prefix = prefix(app.is_subs_hidden(), todo.has_children(), todo.is_active());
                 let text = todo.get_text();
+                let todo_disp = format!("{indent}{prefix} {text}",);
 
-                if app.is_cur_todo(todo) && app.is_in_todos() {
-                    if mode == Mode::Edit {
-                        ui.edit_label(text, editing_cursor, format!("{indent}{prefix} "));
+                if app.is_cur_todo(todo) {
+                    if app.is_in_todos() {
+                        if mode == Mode::Edit {
+                            ui.edit_label(text, editing_cursor, format!("{indent}{prefix} "));
+                        } else {
+                            ui.label_styled(&todo_disp, SELECTED_PAIR, None);
+                        }
                     } else {
-                        ui.label_styled(&format!("{indent}{prefix} {text}"), SELECTED_PAIR, None);
+                        ui.label_styled(&todo_disp, UNSELECTED_PAIR, None);
                     }
                 } else {
-                    ui.label(&format!("{indent}{prefix} {text}"));
+                    ui.label(&todo_disp);
                 }
             }
         }
@@ -268,24 +276,25 @@ fn display_app(ui: &mut UI, app: &mut TodoApp, mode: Mode, editing_cursor: usize
                 let indent = " ".repeat(level * INDENT_SIZE);
                 let prefix = prefix(app.is_subs_hidden(), done.has_children(), done.is_active());
                 let text = done.get_text();
-                let date = if done.is_root() {
-                    format!("({})", done.get_date())
-                } else {
+                let date = if !done.is_root() {
                     String::new()
+                } else {
+                    format!("({})", done.get_date())
                 };
+                let done_disp = format!("{indent}{prefix}{date} {text}",);
 
-                if app.is_cur_done(done) && app.is_in_dones() {
-                    if mode == Mode::Edit {
-                        ui.edit_label(text, editing_cursor, format!("{indent}{prefix} "));
+                if app.is_cur_done(done) {
+                    if app.is_in_dones() {
+                        if mode == Mode::Edit {
+                            ui.edit_label(text, editing_cursor, format!("{indent}{prefix} "));
+                        } else {
+                            ui.label_styled(&done_disp, SELECTED_PAIR, None);
+                        }
                     } else {
-                        ui.label_styled(
-                            &format!("{indent}{prefix}{date} {text}"),
-                            SELECTED_PAIR,
-                            None,
-                        );
+                        ui.label_styled(&done_disp, UNSELECTED_PAIR, None);
                     }
                 } else {
-                    ui.label(&format!("{indent}{prefix}{date} {text}"));
+                    ui.label(&done_disp);
                 }
             }
         }
