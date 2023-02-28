@@ -10,7 +10,6 @@ use ncurses::constants;
 use regex::Regex;
 
 use crate::INDENT_SIZE;
-// const MAX_STACK_SIZE: usize = 20;
 const SEP: &str = "<--->";
 const DATE_FMT: &str = "%Y-%m-%d %H:%M %z";
 
@@ -194,9 +193,6 @@ impl List {
 
     fn record_state(&mut self) {
         self.state_stack.push((self.list.to_owned(), self.cur));
-        // if self.state_stack.len() > MAX_STACK_SIZE {
-        //     self.state_stack.truncate(MAX_STACK_SIZE);
-        // }
     }
 
     fn revert_state(&mut self) -> Result<(), &'static str> {
@@ -208,15 +204,33 @@ impl List {
         }
     }
 
-    fn up(&mut self) {
+    fn up(&mut self, full: bool) {
         if self.cur > 0 && !self.list.is_empty() {
-            self.cur -= 1;
+            if full {
+                self.cur -= 1;
+            } else {
+                if let Some(next) = self.list[..self.cur]
+                    .iter()
+                    .rposition(|item| item.is_root())
+                {
+                    self.cur = next;
+                }
+            }
         }
     }
 
-    fn down(&mut self) {
+    fn down(&mut self, full: bool) {
         if !self.list.is_empty() {
-            self.cur = min(self.cur + 1, self.list.len() - 1)
+            if full {
+                self.cur = min(self.cur + 1, self.list.len() - 1)
+            } else {
+                if let Some(next) = self.list[self.cur + 1..]
+                    .iter()
+                    .position(|item| item.is_root())
+                {
+                    self.cur += next + 1;
+                }
+            }
         }
     }
 
@@ -303,7 +317,7 @@ impl List {
                 }
             }
         } else {
-            Err("Can't drag up. List is empty.")
+            Err("Can't drag down. List is empty.")
         }
     }
 
@@ -311,15 +325,35 @@ impl List {
         self.cur = 0;
     }
 
-    fn half(&mut self) {
+    fn half(&mut self, full: bool) {
         if !self.list.is_empty() {
-            self.cur = self.list.len() / 2;
+            if full {
+                self.cur = self.list.len() / 2;
+            } else {
+                let num_roots = self.list.iter().filter(|item| item.is_root()).count();
+                self.cur = self
+                    .list
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, item)| item.is_root())
+                    .nth(num_roots / 2)
+                    .map(|(i, _)| i)
+                    .unwrap_or(self.cur);
+            }
         }
     }
 
-    fn last(&mut self) {
+    fn last(&mut self, full: bool) {
         if !self.list.is_empty() {
-            self.cur = self.list.len() - 1;
+            if full {
+                self.cur = self.list.len() - 1;
+            } else {
+                self.cur = self
+                    .list
+                    .iter()
+                    .rposition(|item| item.is_root())
+                    .unwrap_or(0);
+            }
         }
     }
 
@@ -470,7 +504,7 @@ impl List {
             if !item.is_root() {
                 return Err("Can't transfer item. Item is a subtask.");
             } else if item.is_active() {
-                return Err("Can't transfer item. Item is active.");
+                return Err("Can't transfer item. Item is still active.");
             }
 
             item.date = Local::now();
@@ -492,7 +526,7 @@ impl List {
             }
             Ok(())
         } else {
-            Err("Can't move item. List is empty.")
+            Err("Can't transfer item. List is empty.")
         }
     }
 
@@ -715,10 +749,10 @@ impl TodoApp {
             }
             Err(err) => {
                 if err.kind() == io::ErrorKind::NotFound {
-                    self.message = format!("File '{file_path}' not found. Creating new one.");
+                    self.message = format!("File '{file_path}' not found. Creating a new one.");
                 } else {
                     self.message =
-                        format!("Error occureed while opening the file '{file_path}': {err:?}");
+                        format!("Error occured while opening the file '{file_path}': {err:?}");
                 }
             }
         }
@@ -736,7 +770,7 @@ impl TodoApp {
                 act_cnt,
             ))
         } else {
-            Err("invalid format for TODO item")
+            Err("invalid format for a TODO item")
         }
     }
 
@@ -748,10 +782,10 @@ impl TodoApp {
             if let Ok(d) = date {
                 Ok(Item::new(caps[3].trim().to_string(), d.into(), parent, 0))
             } else {
-                Err("invalid date format for DONE item")
+                Err("invalid date format for a DONE item")
             }
         } else {
-            Err("invalid format for DONE item")
+            Err("invalid format for a DONE item")
         }
     }
 
@@ -779,28 +813,46 @@ impl TodoApp {
 
     pub fn toggle_panel(&mut self) {
         assert!(!self.is_in_edit(), "Can't toggle panel while in edit mode.");
+
         self.panel = self.panel.togle();
     }
 
     pub fn toggle_subtasks(&mut self) {
-        assert!(!self.is_in_edit(), "Can't toggle hide while in edit mode.");
+        assert!(
+            !self.is_in_edit(),
+            "Can't toggle subtasks while in edit mode."
+        );
+
         self.hide_subs = !self.hide_subs;
+
+        if self.hide_subs {
+            if let Some(cur_todo) = self.todos.get_cur_item() {
+                if !cur_todo.is_root() {
+                    self.todos.up(!self.hide_subs);
+                }
+            }
+            if let Some(cur_done) = self.dones.get_cur_item() {
+                if !cur_done.is_root() {
+                    self.dones.up(!self.hide_subs);
+                }
+            }
+        }
     }
 
     pub fn go_up(&mut self) {
         assert!(!self.is_in_edit(), "Can't go up while in edit mode.");
 
         match self.panel {
-            Panel::Todo => self.todos.up(),
-            Panel::Done => self.dones.up(),
+            Panel::Todo => self.todos.up(!self.hide_subs),
+            Panel::Done => self.dones.up(!self.hide_subs),
         }
     }
 
     pub fn go_down(&mut self) {
         assert!(!self.is_in_edit(), "Can't go down while in edit mode.");
         match self.panel {
-            Panel::Todo => self.todos.down(),
-            Panel::Done => self.dones.down(),
+            Panel::Todo => self.todos.down(!self.hide_subs),
+            Panel::Done => self.dones.down(!self.hide_subs),
         }
     }
 
@@ -815,16 +867,16 @@ impl TodoApp {
     pub fn go_half(&mut self) {
         assert!(!self.is_in_edit(), "Can't go half while in edit mode.");
         match self.panel {
-            Panel::Todo => self.todos.half(),
-            Panel::Done => self.dones.half(),
+            Panel::Todo => self.todos.half(!self.hide_subs),
+            Panel::Done => self.dones.half(!self.hide_subs),
         }
     }
 
     pub fn go_bottom(&mut self) {
         assert!(!self.is_in_edit(), "Can't go bottom while in edit mode.");
         match self.panel {
-            Panel::Todo => self.todos.last(),
-            Panel::Done => self.dones.last(),
+            Panel::Todo => self.todos.last(!self.hide_subs),
+            Panel::Done => self.dones.last(!self.hide_subs),
         }
     }
 
@@ -859,7 +911,7 @@ impl TodoApp {
     }
 
     pub fn drag_down(&mut self) {
-        assert!(!self.is_in_edit(), "Can't drag while in edit mode.");
+        assert!(!self.is_in_edit(), "Can't drag down while in edit mode.");
 
         match self.panel {
             Panel::Todo => {
@@ -944,7 +996,7 @@ impl TodoApp {
     }
 
     pub fn delete_item(&mut self) {
-        assert!(!self.is_in_edit(), "Can't delete while in edit mode");
+        assert!(!self.is_in_edit(), "Can't delete item while in edit mode");
 
         match self.panel {
             Panel::Todo => {
@@ -963,7 +1015,7 @@ impl TodoApp {
                     };
                 } else {
                     self.message
-                        .push_str("Can't delete a TODO item. Transfer it to DONE first.");
+                        .push_str("Can't delete a TODO item. Transfer it to DONEs first.");
                 }
             }
             Panel::Done => {
@@ -971,7 +1023,7 @@ impl TodoApp {
                     self.dones.record_state();
                     match self.dones.delete() {
                         Ok(()) => {
-                            self.message.push_str("DONE item deleted.");
+                            self.message.push_str("A DONE item deleted.");
                             self.operation_stack
                                 .push(Operation::new(Action::Delete, Panel::Done));
                         }
@@ -1044,7 +1096,7 @@ impl TodoApp {
             }
             Panel::Done => self
                 .message
-                .push_str("Can't insert a new DONE item. Only new TODO allowed."),
+                .push_str("Can't insert a new DONE item. Only new TODOs allowed."),
         }
 
         editing_cursor
@@ -1070,7 +1122,7 @@ impl TodoApp {
                         self.operation_stack
                             .push(Operation::new(Action::InEdit, self.panel));
                         self.message
-                            .push_str("What needs to be done for the current TODO?");
+                            .push_str("What needs to be done for the this TODO?");
                     }
                     Err(err) => {
                         self.message.push_str(err);
@@ -1078,7 +1130,7 @@ impl TodoApp {
                     }
                 }
             }
-            Panel::Done => self.message.push_str("Can't add sub-tasks for DONE items."),
+            Panel::Done => self.message.push_str("Can't add subtasks for DONE items."),
         }
 
         editing_cursor

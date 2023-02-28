@@ -1,30 +1,30 @@
 TODO(*): Finish Rust TODO app v2
-    TODO(*): Add subtodos
-        TODO(*): add hide functionality
-            TODO(*): hide key
-            TODO(*): move cursor accordingly
+    TODO(): Add subtodos
         TODO(): rework saving and dumping
         TODO(): rework actions
-            TODO(): deleting
-                TODO(): delete DONE item
-                TODO(): delete a subtask
             TODO(): transfering
             TODO(): draging
             TODO(): inserting
             TODO(): editing
             TODO(): appending
             TODO(): marking
+            TODO(): deleting
+                TODO(): delete DONE item
+                TODO(): delete a subtask
+        TODO(): add hide functionality
+            TODO(): hide subtasks
+            TODO(): move cursor accordingly
     TODO(*): Fix autoresizing
         TODO(*): add alignment
         TODO(): cut text if its going out of bounds
         TODO(): optimize redraw
         TODO(): clear before adding child
-TODO(*): Finish Game of Life with Rust with GUI
-    TODO(*): try different cellular automata
-    TODO(*): use SDL
 TODO(*): Learn Rust
     TODO(): unsafe { lol }
     TODO(*): comprehend borrow checker
+TODO(*): Finish Game of Life with Rust with GUI
+    TODO(*): try different cellular automata
+    TODO(*): use SDL
 <--->
 DONE(2023-02-07 05:43 -0500): Finish Rust TODO app v1
     DONE(2023-02-03 05:43 -0500): Add undo option to TODO app
@@ -34,7 +34,7 @@ DONE(2023-02-07 05:43 -0500): Finish Rust TODO app v1
     DONE(2023-02-04 19:17 -0500): Add inserting option to TODO app
     DONE(2023-02-06 16:00 -0500): Add autoresizing of the TODO app UI
     DONE(2023-02-06 23:09 -0500): Add proper Ctrl+c handling
+DONE(2023-02-16 16:22 -0500): Clean up the house
 DONE(2023-02-10 12:31 -0500): Make lunch
     DONE(2023-02-10 12:18 -0500): Make sandwich
     DONE(2023-02-10 12:25 -0500): Make tea
-DONE(2023-02-16 16:22 -0500): Clean up the house

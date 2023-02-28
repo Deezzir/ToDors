@@ -59,6 +59,8 @@ enum Display {
     Help,
 }
 
+#[cfg(not(unix))]
+compile_error! {"Windows platform is not supported."}
 fn main() {
     sig_handler_init();
 

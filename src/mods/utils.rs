@@ -8,8 +8,6 @@ use crate::{
     FILE_PATH, FPS, HELP, HELP_PAIR, HIGHLIGHT_PAIR, SELECTED_PAIR, UI_PAIR, UNSELECTED_PAIR, USAGE,
 };
 
-#[cfg(not(unix))]
-compile_error! {"Windows is not supported right now"}
 static CTRLC: AtomicBool = AtomicBool::new(false);
 
 extern "C" fn callback(_signum: i32) {
